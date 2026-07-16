@@ -1,0 +1,6 @@
+{
+  "name": "Gestão Rural",
+  "description": "Sistema básico de gestão rural com cadastro de propriedade, catálogo de atividades, talhões, ciclos produtivos, custos, produção e relatórios financeiros com exportação.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
