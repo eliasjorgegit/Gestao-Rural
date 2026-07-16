@@ -7,6 +7,7 @@ import { CyclesSection } from './components/CyclesSection.tsx';
 import { CostsSection } from './components/CostsSection.tsx';
 import { HarvestsSection } from './components/HarvestsSection.tsx';
 import { ReportsSection } from './components/ReportsSection.tsx';
+import { InventorySection } from './components/InventorySection.tsx';
 import { 
   Sprout, 
   Landmark, 
@@ -18,13 +19,14 @@ import {
   LogOut, 
   User as UserIcon,
   ChevronRight,
-  Sparkles
+  Sparkles,
+  Package
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 function Dashboard() {
   const { user, logout } = useAuth();
-  const [activeTab, setActiveTab] = useState<'basics' | 'cycles' | 'costs' | 'harvests' | 'reports'>('basics');
+  const [activeTab, setActiveTab] = useState<'basics' | 'cycles' | 'costs' | 'harvests' | 'reports' | 'inventory'>('basics');
   
   // State to trigger reactive updates in dependent components
   const [refreshTrigger, setRefreshTrigger] = useState(0);
@@ -36,6 +38,7 @@ function Dashboard() {
   const navItems = [
     { id: 'basics', name: 'Cadastros Básicos', desc: 'Fazenda, Culturas e Áreas', icon: Landmark },
     { id: 'cycles', name: 'Ciclos Produtivos', desc: 'Planejar Safras e Lotes', icon: CalendarDays },
+    { id: 'inventory', name: 'Estoque de Insumos', desc: 'Sementes, Adubos e Ferramentas', icon: Package },
     { id: 'costs', name: 'Lançamento de Custos', desc: 'Despesas e Insumos', icon: DollarSign },
     { id: 'harvests', name: 'Produção / Colheita', desc: 'Coletas e Vendas', icon: ShoppingBag },
     { id: 'reports', name: 'Relatórios & Análise', desc: 'Análise de Resultados', icon: BarChart3 },
@@ -164,6 +167,18 @@ function Dashboard() {
                   </div>
 
                   <CyclesSection onRefresh={triggerRefresh} />
+                </div>
+              )}
+
+              {/* 3. CONTROLE DE ESTOQUE */}
+              {activeTab === 'inventory' && (
+                <div className="space-y-6">
+                  <div className="flex items-center gap-2 print:hidden">
+                    <Package className="w-5 h-5 text-[#3a4d39]" />
+                    <h2 className="font-serif italic font-semibold text-xl text-stone-850">Módulo de Controle de Estoque</h2>
+                  </div>
+
+                  <InventorySection onRefresh={triggerRefresh} />
                 </div>
               )}
 

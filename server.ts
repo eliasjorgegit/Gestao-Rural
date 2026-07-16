@@ -4,7 +4,7 @@ import { createServer as createViteServer } from "vite";
 import { requireAuth, AuthRequest } from "./src/middleware/auth.ts";
 import { getOrCreateUser } from "./src/db/users.ts";
 import { db } from "./src/db/index.ts";
-import { properties, activities, plots, cycles, costs, harvests } from "./src/db/schema.ts";
+import { properties, activities, plots, cycles, costs, harvests, inventoryItems, inventoryMovements } from "./src/db/schema.ts";
 import { eq, and, desc } from "drizzle-orm";
 
 async function startServer() {
@@ -558,6 +558,272 @@ async function startServer() {
     } catch (error: any) {
       console.error("Error deleting harvest:", error);
       res.status(500).json({ error: "Erro ao excluir colheita." });
+    }
+  });
+
+  // 7. Inventory Items (Controle de Estoque) CRUD
+  app.get("/api/inventory", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const dbUser = await getOrCreateUser(req.user!.uid, req.user!.email || "");
+      const list = await db.select()
+        .from(inventoryItems)
+        .where(eq(inventoryItems.userId, dbUser.id))
+        .orderBy(desc(inventoryItems.createdAt));
+      res.json(list);
+    } catch (error: any) {
+      console.error("Error fetching inventory items:", error);
+      res.status(500).json({ error: "Erro ao buscar itens de estoque." });
+    }
+  });
+
+  app.post("/api/inventory", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { name, category, quantity, unit, minQuantity, unitCost, location } = req.body;
+      if (!name || !category || !unit) {
+        return res.status(400).json({ error: "Nome, categoria e unidade são obrigatórios." });
+      }
+
+      const dbUser = await getOrCreateUser(req.user!.uid, req.user!.email || "");
+      const result = await db.insert(inventoryItems)
+        .values({
+          userId: dbUser.id,
+          name,
+          category,
+          quantity: quantity !== undefined ? parseFloat(quantity) : 0,
+          unit,
+          minQuantity: minQuantity !== undefined ? parseFloat(minQuantity) : 0,
+          unitCost: unitCost !== undefined ? parseFloat(unitCost) : 0,
+          location: location || null,
+        })
+        .returning();
+      res.json(result[0]);
+    } catch (error: any) {
+      console.error("Error creating inventory item:", error);
+      res.status(500).json({ error: "Erro ao criar item de estoque." });
+    }
+  });
+
+  app.put("/api/inventory/:id", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { id } = req.params;
+      const { name, category, quantity, unit, minQuantity, unitCost, location } = req.body;
+      if (!name || !category || !unit) {
+        return res.status(400).json({ error: "Nome, categoria e unidade são obrigatórios." });
+      }
+
+      const dbUser = await getOrCreateUser(req.user!.uid, req.user!.email || "");
+      const result = await db.update(inventoryItems)
+        .set({
+          name,
+          category,
+          quantity: quantity !== undefined ? parseFloat(quantity) : 0,
+          unit,
+          minQuantity: minQuantity !== undefined ? parseFloat(minQuantity) : 0,
+          unitCost: unitCost !== undefined ? parseFloat(unitCost) : 0,
+          location: location || null,
+        })
+        .where(and(eq(inventoryItems.id, parseInt(id)), eq(inventoryItems.userId, dbUser.id)))
+        .returning();
+
+      if (result.length === 0) {
+        return res.status(404).json({ error: "Item de estoque não encontrado ou sem permissão." });
+      }
+      res.json(result[0]);
+    } catch (error: any) {
+      console.error("Error updating inventory item:", error);
+      res.status(500).json({ error: "Erro ao editar item de estoque." });
+    }
+  });
+
+  app.delete("/api/inventory/:id", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { id } = req.params;
+      const dbUser = await getOrCreateUser(req.user!.uid, req.user!.email || "");
+      const result = await db.delete(inventoryItems)
+        .where(and(eq(inventoryItems.id, parseInt(id)), eq(inventoryItems.userId, dbUser.id)))
+        .returning();
+
+      if (result.length === 0) {
+        return res.status(404).json({ error: "Item de estoque não encontrado ou sem permissão." });
+      }
+      res.json({ message: "Item de estoque excluído com sucesso." });
+    } catch (error: any) {
+      console.error("Error deleting inventory item:", error);
+      res.status(500).json({ error: "Erro ao excluir item de estoque. Verifique se ele possui movimentações vinculadas." });
+    }
+  });
+
+  // 8. Inventory Movements (Histórico) CRUD
+  app.get("/api/inventory/movements", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const dbUser = await getOrCreateUser(req.user!.uid, req.user!.email || "");
+      
+      const list = await db.select({
+        id: inventoryMovements.id,
+        itemId: inventoryMovements.itemId,
+        type: inventoryMovements.type,
+        quantity: inventoryMovements.quantity,
+        date: inventoryMovements.date,
+        description: inventoryMovements.description,
+        cycleId: inventoryMovements.cycleId,
+        createdAt: inventoryMovements.createdAt,
+        itemName: inventoryItems.name,
+        itemUnit: inventoryItems.unit,
+        cycleName: cycles.name,
+      })
+      .from(inventoryMovements)
+      .innerJoin(inventoryItems, eq(inventoryMovements.itemId, inventoryItems.id))
+      .leftJoin(cycles, eq(inventoryMovements.cycleId, cycles.id))
+      .where(eq(inventoryMovements.userId, dbUser.id))
+      .orderBy(desc(inventoryMovements.date), desc(inventoryMovements.createdAt));
+
+      res.json(list);
+    } catch (error: any) {
+      console.error("Error fetching inventory movements:", error);
+      res.status(500).json({ error: "Erro ao buscar movimentações de estoque." });
+    }
+  });
+
+  app.post("/api/inventory/movements", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { itemId, type, quantity, date, description, cycleId } = req.body;
+      if (!itemId || !type || quantity === undefined || !date) {
+        return res.status(400).json({ error: "Item, tipo, quantidade e data são obrigatórios." });
+      }
+
+      const parsedQty = parseFloat(quantity);
+      if (parsedQty <= 0) {
+        return res.status(400).json({ error: "A quantidade deve ser maior que zero." });
+      }
+
+      const dbUser = await getOrCreateUser(req.user!.uid, req.user!.email || "");
+
+      // Get current item to check stock availability and update it
+      const currentItem = await db.select()
+        .from(inventoryItems)
+        .where(and(eq(inventoryItems.id, parseInt(itemId)), eq(inventoryItems.userId, dbUser.id)))
+        .limit(1);
+
+      if (currentItem.length === 0) {
+        return res.status(404).json({ error: "Item de estoque não encontrado." });
+      }
+
+      const item = currentItem[0];
+      let newQuantity = item.quantity;
+
+      if (type === 'saida') {
+        if (item.quantity < parsedQty) {
+          return res.status(400).json({ error: `Saldo insuficiente em estoque. Saldo atual: ${item.quantity} ${item.unit}` });
+        }
+        newQuantity -= parsedQty;
+      } else {
+        newQuantity += parsedQty;
+      }
+
+      // Update inventory item quantity
+      await db.update(inventoryItems)
+        .set({ quantity: newQuantity })
+        .where(eq(inventoryItems.id, item.id));
+
+      // Record movement
+      const movement = await db.insert(inventoryMovements)
+        .values({
+          userId: dbUser.id,
+          itemId: item.id,
+          type,
+          quantity: parsedQty,
+          date,
+          description: description || null,
+          cycleId: cycleId ? parseInt(cycleId) : null,
+        })
+        .returning();
+
+      // INTEGRATION: If movement is 'saida' and cycleId is provided, automatically record a cost in the costs table!
+      if (type === 'saida' && cycleId) {
+        let costCategory = "Outros";
+        if (item.category === "Adubos") {
+          costCategory = "Adubação";
+        } else if (item.category === "Defensivos Agrícolas") {
+          costCategory = "Agrotóxicos";
+        } else if (item.category === "Sementes / Mudas") {
+          costCategory = "Sementes / Mudas";
+        } else if (item.category === "Mantimentos") {
+          costCategory = "Outros";
+        } else if (item.category === "Ferramentas") {
+          costCategory = "Manutenção";
+        }
+
+        const calculatedCost = parsedQty * item.unitCost;
+        if (calculatedCost > 0) {
+          await db.insert(costs)
+            .values({
+              userId: dbUser.id,
+              cycleId: parseInt(cycleId),
+              date,
+              category: costCategory,
+              description: `Consumo de Estoque: ${item.name} (${parsedQty} ${item.unit})`,
+              value: calculatedCost,
+            });
+        }
+      }
+
+      res.json(movement[0]);
+    } catch (error: any) {
+      console.error("Error creating inventory movement:", error);
+      res.status(500).json({ error: "Erro ao registrar movimentação de estoque." });
+    }
+  });
+
+  app.delete("/api/inventory/movements/:id", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { id } = req.params;
+      const dbUser = await getOrCreateUser(req.user!.uid, req.user!.email || "");
+
+      // Get movement
+      const existingMov = await db.select()
+        .from(inventoryMovements)
+        .where(and(eq(inventoryMovements.id, parseInt(id)), eq(inventoryMovements.userId, dbUser.id)))
+        .limit(1);
+
+      if (existingMov.length === 0) {
+        return res.status(404).json({ error: "Movimentação não encontrada." });
+      }
+
+      const mov = existingMov[0];
+
+      // Get item to update quantity
+      const existingItem = await db.select()
+        .from(inventoryItems)
+        .where(and(eq(inventoryItems.id, mov.itemId), eq(inventoryItems.userId, dbUser.id)))
+        .limit(1);
+
+      if (existingItem.length > 0) {
+        const item = existingItem[0];
+        let reversedQuantity = item.quantity;
+
+        if (mov.type === 'entrada') {
+          reversedQuantity -= mov.quantity;
+        } else {
+          reversedQuantity += mov.quantity;
+        }
+
+        if (reversedQuantity < 0) {
+          return res.status(400).json({ error: "Não é possível estornar esta movimentação pois resultaria em saldo negativo do estoque." });
+        }
+
+        await db.update(inventoryItems)
+          .set({ quantity: reversedQuantity })
+          .where(eq(inventoryItems.id, item.id));
+      }
+
+      // Delete the movement
+      await db.delete(inventoryMovements)
+        .where(eq(inventoryMovements.id, mov.id));
+
+      res.json({ message: "Movimentação estornada com sucesso." });
+    } catch (error: any) {
+      console.error("Error deleting movement:", error);
+      res.status(500).json({ error: "Erro ao estornar movimentação de estoque." });
     }
   });
 

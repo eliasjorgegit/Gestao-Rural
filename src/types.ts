@@ -91,3 +91,43 @@ export const HARVEST_UNITS = [
   "litros",
   "unidades"
 ];
+
+export interface InventoryItem {
+  id: number;
+  userId: number;
+  name: string;
+  category: string; // 'Adubos', 'Defensivos Agrícolas', 'Ferramentas', 'Mantimentos', 'Outros'
+  quantity: number;
+  unit: string;
+  minQuantity: number;
+  unitCost: number;
+  location?: string;
+  createdAt?: string;
+}
+
+export interface InventoryMovement {
+  id: number;
+  userId: number;
+  itemId: number;
+  type: 'entrada' | 'saida';
+  quantity: number;
+  date: string; // YYYY-MM-DD
+  description?: string;
+  cycleId?: number;
+  createdAt?: string;
+  
+  // Joins
+  itemName?: string;
+  itemUnit?: string;
+  cycleName?: string;
+}
+
+export const INVENTORY_CATEGORIES = [
+  "Adubos",
+  "Defensivos Agrícolas",
+  "Ferramentas",
+  "Mantimentos",
+  "Sementes / Mudas",
+  "Outros"
+];
+

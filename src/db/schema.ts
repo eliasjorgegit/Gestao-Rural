@@ -104,6 +104,8 @@ export const usersRelations = relations(users, ({ many }) => ({
   cycles: many(cycles),
   costs: many(costs),
   harvests: many(harvests),
+  inventoryItems: many(inventoryItems),
+  inventoryMovements: many(inventoryMovements),
 }));
 
 export const propertiesRelations = relations(properties, ({ one }) => ({
@@ -144,6 +146,7 @@ export const cyclesRelations = relations(cycles, ({ one, many }) => ({
   }),
   costs: many(costs),
   harvests: many(harvests),
+  inventoryMovements: many(inventoryMovements),
 }));
 
 export const costsRelations = relations(costs, ({ one }) => ({
@@ -164,6 +167,64 @@ export const harvestsRelations = relations(harvests, ({ one }) => ({
   }),
   cycle: one(cycles, {
     fields: [harvests.cycleId],
+    references: [cycles.id],
+  }),
+}));
+
+// 8. Inventory Items Table (Controle de Estoque)
+export const inventoryItems = pgTable('inventory_items', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id')
+    .references(() => users.id, { onDelete: 'cascade' })
+    .notNull(),
+  name: text('name').notNull(),
+  category: text('category').notNull(), // 'Adubos', 'Defensivos Agrícolas', 'Ferramentas', 'Mantimentos', 'Outros'
+  quantity: doublePrecision('quantity').notNull().default(0),
+  unit: text('unit').notNull(), // 'kg', 'L', 'unidades', 'sacos', etc.
+  minQuantity: doublePrecision('min_quantity').notNull().default(0),
+  unitCost: doublePrecision('unit_cost').notNull().default(0),
+  location: text('location'),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+// 9. Stock Movements Table (Histórico de Entrada e Saída)
+export const inventoryMovements = pgTable('inventory_movements', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id')
+    .references(() => users.id, { onDelete: 'cascade' })
+    .notNull(),
+  itemId: integer('item_id')
+    .references(() => inventoryItems.id, { onDelete: 'cascade' })
+    .notNull(),
+  type: text('type').notNull(), // 'entrada' | 'saida'
+  quantity: doublePrecision('quantity').notNull(),
+  date: text('date').notNull(), // YYYY-MM-DD
+  description: text('description'),
+  cycleId: integer('cycle_id')
+    .references(() => cycles.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Relations for Inventory
+export const inventoryItemsRelations = relations(inventoryItems, ({ one, many }) => ({
+  user: one(users, {
+    fields: [inventoryItems.userId],
+    references: [users.id],
+  }),
+  movements: many(inventoryMovements),
+}));
+
+export const inventoryMovementsRelations = relations(inventoryMovements, ({ one }) => ({
+  user: one(users, {
+    fields: [inventoryMovements.userId],
+    references: [users.id],
+  }),
+  item: one(inventoryItems, {
+    fields: [inventoryMovements.itemId],
+    references: [inventoryItems.id],
+  }),
+  cycle: one(cycles, {
+    fields: [inventoryMovements.cycleId],
     references: [cycles.id],
   }),
 }));
