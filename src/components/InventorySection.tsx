@@ -45,9 +45,11 @@ export const InventorySection: React.FC<InventorySectionProps> = ({ onRefresh })
   // Modal State Managers
   const [isItemModalOpen, setIsItemModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
+  const [deletingItemState, setDeletingItemState] = useState<InventoryItem | null>(null);
 
   const [isMovementModalOpen, setIsMovementModalOpen] = useState(false);
   const [movementItem, setMovementItem] = useState<InventoryItem | null>(null);
+  const [reversingMovementState, setReversingMovementState] = useState<InventoryMovement | null>(null);
 
   // Form states for Item
   const [itemName, setItemName] = useState('');
@@ -245,10 +247,6 @@ export const InventorySection: React.FC<InventorySectionProps> = ({ onRefresh })
   };
 
   const handleDeleteItem = async (id: number) => {
-    if (!window.confirm('Tem certeza de que deseja excluir este item do estoque? Esta ação não pode ser desfeita se houver movimentações vinculadas.')) {
-      return;
-    }
-
     try {
       setError(null);
       const res = await fetchWithAuth(`/api/inventory/${id}`, {
@@ -257,23 +255,22 @@ export const InventorySection: React.FC<InventorySectionProps> = ({ onRefresh })
 
       if (res.ok) {
         showSuccess('Item excluído com sucesso.');
+        setDeletingItemState(null);
         fetchData();
         if (onRefresh) onRefresh();
       } else {
         const errData = await res.json();
-        setError(errData.error || 'Erro ao excluir item. Verifique se existem movimentações registradas para ele.');
+        setError(errData.error || 'Erro ao excluir item.');
+        setDeletingItemState(null);
       }
     } catch (err) {
       console.error(err);
       setError('Erro de conexão ao excluir o item.');
+      setDeletingItemState(null);
     }
   };
 
   const handleReverseMovement = async (id: number) => {
-    if (!window.confirm('Deseja estornar esta movimentação? O saldo do estoque será atualizado de forma reversa.')) {
-      return;
-    }
-
     try {
       setError(null);
       const res = await fetchWithAuth(`/api/inventory/movements/${id}`, {
@@ -282,15 +279,18 @@ export const InventorySection: React.FC<InventorySectionProps> = ({ onRefresh })
 
       if (res.ok) {
         showSuccess('Movimentação estornada com sucesso!');
+        setReversingMovementState(null);
         fetchData();
         if (onRefresh) onRefresh();
       } else {
         const errData = await res.json();
         setError(errData.error || 'Erro ao estornar movimentação.');
+        setReversingMovementState(null);
       }
     } catch (err) {
       console.error(err);
       setError('Erro de conexão ao estornar movimentação.');
+      setReversingMovementState(null);
     }
   };
 
@@ -576,7 +576,7 @@ export const InventorySection: React.FC<InventorySectionProps> = ({ onRefresh })
                           <Edit2 className="w-3.5 h-3.5" />
                         </button>
                         <button
-                          onClick={() => handleDeleteItem(item.id)}
+                          onClick={() => setDeletingItemState(item)}
                           className="p-1.5 text-stone-400 hover:text-rose-600 rounded-lg hover:bg-stone-100 transition-all cursor-pointer"
                           title="Excluir produto"
                         >
@@ -658,7 +658,7 @@ export const InventorySection: React.FC<InventorySectionProps> = ({ onRefresh })
                       </td>
                       <td className="py-3 px-4 text-center">
                         <button
-                          onClick={() => handleReverseMovement(mov.id)}
+                          onClick={() => setReversingMovementState(mov)}
                           className="text-stone-400 hover:text-rose-600 text-[11px] font-semibold px-2 py-1 rounded-md hover:bg-rose-50 transition-all cursor-pointer"
                           title="Estornar esta movimentação de estoque"
                         >
@@ -916,6 +916,70 @@ export const InventorySection: React.FC<InventorySectionProps> = ({ onRefresh })
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL CONFIRMAR EXCLUSÃO DE PRODUTO */}
+      {deletingItemState && (
+        <div className="fixed inset-0 bg-stone-950/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-xl space-y-4 border border-stone-200">
+            <div className="flex items-center gap-3 text-rose-600">
+              <AlertTriangle className="w-6 h-6" />
+              <h3 className="font-serif italic font-bold text-lg text-stone-900">Excluir Item do Estoque</h3>
+            </div>
+            <p className="text-sm text-stone-600 leading-relaxed">
+              Tem certeza de que deseja excluir o item <strong className="text-stone-900 font-bold">{deletingItemState.name}</strong>?
+            </p>
+            <p className="text-xs text-stone-500 bg-stone-50 p-3 rounded-xl border border-stone-200">
+              Todas as movimentações e lançamentos de custos vinculados a este produto no estoque também serão limpos.
+            </p>
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                onClick={() => setDeletingItemState(null)}
+                className="px-4 py-2 text-sm text-stone-600 hover:bg-stone-100 rounded-xl transition-all cursor-pointer font-medium"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => handleDeleteItem(deletingItemState.id)}
+                className="px-4 py-2 text-sm bg-rose-600 hover:bg-rose-700 text-white font-medium rounded-xl shadow-xs transition-all cursor-pointer"
+              >
+                Confirmar Exclusão
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL CONFIRMAR ESTORNO DE MOVIMENTAÇÃO */}
+      {reversingMovementState && (
+        <div className="fixed inset-0 bg-stone-950/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-xl space-y-4 border border-stone-200">
+            <div className="flex items-center gap-3 text-rose-600">
+              <AlertTriangle className="w-6 h-6" />
+              <h3 className="font-serif italic font-bold text-lg text-stone-900">Estornar Movimentação</h3>
+            </div>
+            <p className="text-sm text-stone-600 leading-relaxed">
+              Deseja realmente estornar a movimentação de <strong className="font-bold text-stone-900">{reversingMovementState.type === 'entrada' ? 'Entrada' : 'Consumo (Saída)'}</strong> de <strong className="font-mono text-stone-900">{reversingMovementState.quantity} {reversingMovementState.itemUnit}</strong> do produto <strong className="font-bold text-stone-900">{reversingMovementState.itemName}</strong>?
+            </p>
+            <p className="text-xs text-emerald-800 bg-emerald-50 p-3 rounded-xl border border-emerald-200/80">
+              <b>Saldo e Custos:</b> O saldo em estoque será recalculado revertendo esta quantidade. Se houver custo registrado no financeiro para esta saída, ele também será estornado.
+            </p>
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                onClick={() => setReversingMovementState(null)}
+                className="px-4 py-2 text-sm text-stone-600 hover:bg-stone-100 rounded-xl transition-all cursor-pointer font-medium"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => handleReverseMovement(reversingMovementState.id)}
+                className="px-4 py-2 text-sm bg-rose-600 hover:bg-rose-700 text-white font-medium rounded-xl shadow-xs transition-all cursor-pointer"
+              >
+                Confirmar Estorno
+              </button>
+            </div>
           </div>
         </div>
       )}

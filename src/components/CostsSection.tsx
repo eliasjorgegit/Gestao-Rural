@@ -17,6 +17,7 @@ export const CostsSection: React.FC<CostsSectionProps> = ({ onRefresh }) => {
   // Form states
   const [isAdding, setIsAdding] = useState(false);
   const [editingCost, setEditingCost] = useState<Cost | null>(null);
+  const [deletingCost, setDeletingCost] = useState<Cost | null>(null);
 
   const [cycleId, setCycleId] = useState('');
   const [date, setDate] = useState('');
@@ -132,25 +133,25 @@ export const CostsSection: React.FC<CostsSectionProps> = ({ onRefresh }) => {
   };
 
   const handleDelete = async (id: number) => {
-    if (!confirm('Deseja realmente remover este lançamento de custo?')) {
-      return;
-    }
-
     try {
+      setError(null);
       const res = await fetchWithAuth(`/api/costs/${id}`, {
         method: 'DELETE',
       });
 
       if (res.ok) {
-        setCosts(costs.filter(c => c.id !== id));
+        setDeletingCost(null);
+        await fetchData();
         if (onRefresh) onRefresh();
       } else {
         const errData = await res.json();
         setError(errData.error || 'Erro ao remover lançamento.');
+        setDeletingCost(null);
       }
     } catch (err) {
       console.error(err);
       setError('Erro ao conectar.');
+      setDeletingCost(null);
     }
   };
 
@@ -364,7 +365,7 @@ export const CostsSection: React.FC<CostsSectionProps> = ({ onRefresh }) => {
                             </button>
                             <button
                               id={`delete-cost-btn-${cost.id}`}
-                              onClick={() => handleDelete(cost.id)}
+                              onClick={() => setDeletingCost(cost)}
                               className="p-1.5 text-stone-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
                               title="Excluir"
                             >
@@ -381,6 +382,40 @@ export const CostsSection: React.FC<CostsSectionProps> = ({ onRefresh }) => {
           </>
         )}
       </div>
+
+      {/* MODAL DE CONFIRMAÇÃO DE EXCLUSÃO DE CUSTO */}
+      {deletingCost && (
+        <div className="fixed inset-0 bg-stone-950/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-xl space-y-4 border border-stone-200">
+            <div className="flex items-center gap-3 text-rose-600">
+              <AlertTriangle className="w-6 h-6" />
+              <h3 className="font-serif italic font-bold text-lg text-stone-900">Excluir Lançamento de Custo</h3>
+            </div>
+            <p className="text-sm text-stone-600 leading-relaxed">
+              Deseja realmente remover o custo de <strong className="font-mono text-stone-900">{deletingCost.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong> ("{deletingCost.description}")?
+            </p>
+            <p className="text-xs text-emerald-800 bg-emerald-50 p-3 rounded-xl border border-emerald-200/80">
+              <b>Devolução de Estoque:</b> Se este lançamento tiver origem no consumo de insumos do estoque, a quantidade utilizada será automaticamente estornada e devolvida para o seu Estoque de Insumos!
+            </p>
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                id="cancel-delete-cost-btn"
+                onClick={() => setDeletingCost(null)}
+                className="px-4 py-2 text-sm text-stone-600 hover:bg-stone-100 rounded-xl transition-all cursor-pointer font-medium"
+              >
+                Cancelar
+              </button>
+              <button
+                id="confirm-delete-cost-btn"
+                onClick={() => handleDelete(deletingCost.id)}
+                className="px-4 py-2 text-sm bg-rose-600 hover:bg-rose-700 text-white font-medium rounded-xl shadow-xs transition-all cursor-pointer"
+              >
+                Confirmar Exclusão
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

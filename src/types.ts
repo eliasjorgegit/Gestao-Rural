@@ -48,6 +48,7 @@ export interface Cost {
   category: string;
   description: string;
   value: number; // R$
+  inventoryMovementId?: number;
   createdAt?: string;
   
   // Joins

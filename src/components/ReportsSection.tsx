@@ -12,7 +12,11 @@ import {
   TableProperties, 
   CalendarDays,
   Sparkles,
-  ExternalLink
+  ExternalLink,
+  Layers,
+  PieChart,
+  Scale,
+  Sprout
 } from 'lucide-react';
 
 export const ReportsSection: React.FC = () => {
@@ -29,7 +33,7 @@ export const ReportsSection: React.FC = () => {
   const [selectedCycleId, setSelectedCycleId] = useState<string>('');
   
   // Tab inside Reports
-  const [activeSubTab, setActiveSubTab] = useState<'dashboard' | 'costs'>('dashboard');
+  const [activeSubTab, setActiveSubTab] = useState<'dashboard' | 'per_hectare' | 'costs'>('dashboard');
   const [showPrintWarning, setShowPrintWarning] = useState(false);
 
   const fetchData = async () => {
@@ -112,6 +116,66 @@ export const ReportsSection: React.FC = () => {
     productionByActivity[actName].revenue += curr.quantity * curr.pricePerUnit;
   });
 
+  // --- CÁLCULOS DETALHADOS POR HECTARE ---
+  const selectedPlotObj = selectedPlotId ? plots.find(p => p.id === parseInt(selectedPlotId)) : null;
+  const selectedCycleObj = selectedCycleId ? cycles.find(c => c.id === parseInt(selectedCycleId)) : null;
+
+  let totalAreaHectares = 0;
+  if (selectedCycleObj) {
+    const cyclePlot = plots.find(p => p.id === selectedCycleObj.plotId);
+    totalAreaHectares = cyclePlot?.size || selectedCycleObj.plotSize || 0;
+  } else if (selectedPlotObj) {
+    totalAreaHectares = selectedPlotObj.size || 0;
+  } else {
+    const activePlotIds = new Set(filteredCycles.map(c => c.plotId));
+    if (activePlotIds.size > 0) {
+      totalAreaHectares = plots
+        .filter(p => activePlotIds.has(p.id))
+        .reduce((acc, p) => acc + (p.size || 0), 0);
+    } else {
+      totalAreaHectares = plots.reduce((acc, p) => acc + (p.size || 0), 0);
+    }
+  }
+
+  const custoMedioPorHectare = totalAreaHectares > 0 ? totalCusto / totalAreaHectares : 0;
+  const receitaMediaPorHectare = totalAreaHectares > 0 ? totalReceita / totalAreaHectares : 0;
+  const lucroMedioPorHectare = receitaMediaPorHectare - custoMedioPorHectare;
+
+  // Detalhamento de custo por hectare por categoria
+  const categoryHectareData = Object.entries(costsByCategory).map(([cat, val]) => {
+    const perHa = totalAreaHectares > 0 ? val / totalAreaHectares : 0;
+    const percentage = totalCusto > 0 ? (val / totalCusto) * 100 : 0;
+    return {
+      category: cat,
+      totalVal: val,
+      perHa,
+      percentage
+    };
+  }).sort((a, b) => b.totalVal - a.totalVal);
+
+  // Detalhamento por Ciclo / Talhão (Custo por hectare em cada talhão)
+  const cycleHectareBreakdown = filteredCycles.map(cycle => {
+    const plot = plots.find(p => p.id === cycle.plotId);
+    const plotSize = plot?.size || cycle.plotSize || 1;
+    const cycleCostsList = filteredCosts.filter(c => c.cycleId === cycle.id);
+    const totalCycleCost = cycleCostsList.reduce((acc, c) => acc + c.value, 0);
+    const cycleCostPerHa = totalCycleCost / (plotSize > 0 ? plotSize : 1);
+
+    const cycleCategoryCosts: Record<string, number> = {};
+    cycleCostsList.forEach(c => {
+      cycleCategoryCosts[c.category] = (cycleCategoryCosts[c.category] || 0) + c.value;
+    });
+
+    return {
+      cycle,
+      plot,
+      plotSize,
+      totalCycleCost,
+      cycleCostPerHa,
+      categoryBreakdown: cycleCategoryCosts
+    };
+  });
+
   // CSV Export functions
   const exportCostsToCSV = () => {
     const headers = ['Data', 'Ciclo Produtivo', 'Talhão', 'Categoria', 'Descrição', 'Valor (R$)'];
@@ -131,6 +195,47 @@ export const ReportsSection: React.FC = () => {
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
     link.setAttribute("download", `relatorio_custos_${selectedPlotId || 'geral'}_${selectedCycleId || 'geral'}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const exportHectareToCSV = () => {
+    const headers = ['Categoria de Custo', 'Custo Total (R$)', 'Área Total (ha)', 'Custo por Hectare (R$/ha)', 'Participação (%)'];
+    const rows = categoryHectareData.map(item => [
+      item.category,
+      item.totalVal.toFixed(2),
+      totalAreaHectares.toFixed(2),
+      item.perHa.toFixed(2),
+      item.percentage.toFixed(1) + '%'
+    ]);
+
+    rows.push(['', '', '', '', '']);
+    rows.push(['RESUMO GERAL POR HECTARE', '', '', '', '']);
+    rows.push(['Área Total Analisada', totalAreaHectares.toFixed(2) + ' ha', '', '', '']);
+    rows.push(['Custo Médio / ha', custoMedioPorHectare.toFixed(2) + ' R$/ha', '', '', '100%']);
+    rows.push(['Receita Média / ha', receitaMediaPorHectare.toFixed(2) + ' R$/ha', '', '', '']);
+    rows.push(['Lucro Médio / ha', lucroMedioPorHectare.toFixed(2) + ' R$/ha', '', '', '']);
+
+    rows.push(['', '', '', '', '']);
+    rows.push(['DETALHAMENTO POR CICLO E TALHÃO', 'Área (ha)', 'Custo Total (R$)', 'Custo por Hectare (R$/ha)', '']);
+    cycleHectareBreakdown.forEach(item => {
+      rows.push([
+        `${item.cycle.name} (${item.plot?.name || item.cycle.plotName})`,
+        item.plotSize.toFixed(2),
+        item.totalCycleCost.toFixed(2),
+        item.cycleCostPerHa.toFixed(2),
+        ''
+      ]);
+    });
+
+    const csvContent = "data:text/csv;charset=utf-8,\uFEFF" 
+      + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
+    
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `custos_por_hectare_${selectedPlotId || 'geral'}_${selectedCycleId || 'geral'}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -305,12 +410,12 @@ export const ReportsSection: React.FC = () => {
         </div>
       </div>
 
-      {/* Navegação entre Visualização Dashboard vs Relatório de Custos (Ocultado na impressão) */}
-      <div className="flex border-b border-stone-200 print:hidden">
+      {/* Navegação entre Visualização Dashboard, Custos por Hectare e Relatório de Custos (Ocultado na impressão) */}
+      <div className="flex border-b border-stone-200 print:hidden overflow-x-auto">
         <button
           id="tab-sub-dashboard"
           onClick={() => setActiveSubTab('dashboard')}
-          className={`flex items-center gap-2 py-3 px-5 text-sm font-semibold border-b-2 transition-all cursor-pointer font-serif italic ${
+          className={`flex items-center gap-2 py-3 px-5 text-sm font-semibold border-b-2 transition-all cursor-pointer font-serif italic whitespace-nowrap ${
             activeSubTab === 'dashboard' 
               ? 'border-[#3a4d39] text-[#3a4d39] font-bold' 
               : 'border-transparent text-stone-400 hover:text-stone-600'
@@ -320,9 +425,21 @@ export const ReportsSection: React.FC = () => {
           Análise de Resultados (Dashboard)
         </button>
         <button
+          id="tab-sub-per-hectare"
+          onClick={() => setActiveSubTab('per_hectare')}
+          className={`flex items-center gap-2 py-3 px-5 text-sm font-semibold border-b-2 transition-all cursor-pointer font-serif italic whitespace-nowrap ${
+            activeSubTab === 'per_hectare' 
+              ? 'border-[#3a4d39] text-[#3a4d39] font-bold' 
+              : 'border-transparent text-stone-400 hover:text-stone-600'
+          }`}
+        >
+          <Scale className="w-4 h-4" />
+          Custos por Hectare (R$/ha)
+        </button>
+        <button
           id="tab-sub-costs"
           onClick={() => setActiveSubTab('costs')}
-          className={`flex items-center gap-2 py-3 px-5 text-sm font-semibold border-b-2 transition-all cursor-pointer font-serif italic ${
+          className={`flex items-center gap-2 py-3 px-5 text-sm font-semibold border-b-2 transition-all cursor-pointer font-serif italic whitespace-nowrap ${
             activeSubTab === 'costs' 
               ? 'border-[#3a4d39] text-[#3a4d39] font-bold' 
               : 'border-transparent text-stone-400 hover:text-stone-600'
@@ -419,13 +536,13 @@ export const ReportsSection: React.FC = () => {
                       <div key={act} className="flex justify-between items-center p-3 rounded-xl bg-stone-50 border border-stone-200/60">
                         <div>
                           <p className="font-serif italic font-bold text-stone-850 text-sm">{act}</p>
-                          <p className="text-xs text-stone-400 font-medium">Vol. Colhido: {data.quantity} {data.unit}</p>
+                          <p className="text-xs text-stone-400 font-medium font-sans">Vol. Colhido: {data.quantity} {data.unit}</p>
                         </div>
                         <div className="text-right">
                           <p className="font-bold text-[#3a4d39] text-sm font-mono">
                             {data.revenue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                           </p>
-                          <p className="text-xxs text-stone-400">Participação: {percentage.toFixed(1)}%</p>
+                          <p className="text-xxs text-stone-400 font-sans">Participação: {percentage.toFixed(1)}%</p>
                         </div>
                       </div>
                     );
@@ -435,6 +552,233 @@ export const ReportsSection: React.FC = () => {
             </div>
 
           </div>
+        </div>
+      )}
+
+      {/* 2. CUSTOS DETALHADOS POR HECTARE */}
+      {(activeSubTab === 'per_hectare' || window.matchMedia('print').matches) && (
+        <div className={`space-y-6 ${activeSubTab !== 'per_hectare' ? 'hidden print:block' : ''}`}>
+          
+          {/* Ações superiores para Custos por Hectare */}
+          <div className="flex justify-between items-center bg-stone-50 px-6 py-3.5 rounded-xl border border-stone-200 print:hidden">
+            <span className="text-xs font-semibold text-stone-500 flex items-center gap-2">
+              <Scale className="w-4 h-4 text-[#3a4d39]" />
+              Análise e Indicadores de Custo por Hectare (R$/ha)
+            </span>
+            <div className="flex gap-2">
+              <button
+                id="export-hectare-csv-btn"
+                onClick={exportHectareToCSV}
+                className="flex items-center gap-1.5 text-xs bg-white border border-stone-200 hover:bg-stone-100 text-stone-700 px-3.5 py-2 rounded-xl transition-all shadow-xxs cursor-pointer font-medium"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5 text-[#3a4d39]" />
+                Exportar CSV
+              </button>
+              <button
+                id="print-hectare-btn"
+                onClick={handlePrint}
+                className="flex items-center gap-1.5 text-xs bg-[#3a4d39] hover:bg-[#4f6b4e] text-white px-3.5 py-2 rounded-xl transition-all shadow-xxs cursor-pointer font-medium"
+              >
+                <Printer className="w-3.5 h-3.5" />
+                Imprimir Relatório
+              </button>
+            </div>
+          </div>
+
+          {/* Cards de Métricas por Hectare */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="bg-white rounded-2xl border border-stone-200 p-5 shadow-xs flex items-center gap-4">
+              <div className="p-3 bg-stone-100 rounded-xl text-stone-700">
+                <Sprout className="w-6 h-6" />
+              </div>
+              <div>
+                <p className="text-xs text-stone-500 font-medium">Área Total Analisada</p>
+                <h4 className="text-xl font-serif italic font-bold text-stone-900">
+                  {totalAreaHectares.toFixed(2)} <span className="text-xs font-normal text-stone-500">ha</span>
+                </h4>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-2xl border border-stone-200 p-5 shadow-xs flex items-center gap-4">
+              <div className="p-3 bg-rose-50 rounded-xl text-rose-700">
+                <DollarSign className="w-6 h-6" />
+              </div>
+              <div>
+                <p className="text-xs text-stone-500 font-medium">Custo Médio / Hectare</p>
+                <h4 className="text-xl font-serif italic font-bold text-rose-800">
+                  {custoMedioPorHectare.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} <span className="text-xs font-normal text-stone-500">/ha</span>
+                </h4>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-2xl border border-stone-200 p-5 shadow-xs flex items-center gap-4">
+              <div className="p-3 bg-emerald-50 rounded-xl text-emerald-700">
+                <TrendingUp className="w-6 h-6" />
+              </div>
+              <div>
+                <p className="text-xs text-stone-500 font-medium">Receita Média / Hectare</p>
+                <h4 className="text-xl font-serif italic font-bold text-emerald-800">
+                  {receitaMediaPorHectare.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} <span className="text-xs font-normal text-stone-500">/ha</span>
+                </h4>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-2xl border border-stone-200 p-5 shadow-xs flex items-center gap-4">
+              <div className="p-3 bg-[#3a4d39]/10 rounded-xl text-[#3a4d39]">
+                <Scale className="w-6 h-6" />
+              </div>
+              <div>
+                <p className="text-xs text-stone-500 font-medium">Lucro Médio / Hectare</p>
+                <h4 className={`text-xl font-serif italic font-bold ${lucroMedioPorHectare >= 0 ? 'text-[#3a4d39]' : 'text-rose-700'}`}>
+                  {lucroMedioPorHectare.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} <span className="text-xs font-normal text-stone-500">/ha</span>
+                </h4>
+              </div>
+            </div>
+          </div>
+
+          {/* Tabela 1: Custos de Insumos e Serviços por Hectare (Por Categoria) */}
+          <div className="bg-white rounded-2xl border border-stone-200 p-6 shadow-xs space-y-4">
+            <div className="flex justify-between items-center border-b border-stone-100 pb-3">
+              <div>
+                <h4 className="font-serif italic font-bold text-stone-900 text-base flex items-center gap-2">
+                  <PieChart className="w-4 h-4 text-[#3a4d39]" />
+                  Detalhamento de Custos de Insumos e Serviços por Hectare
+                </h4>
+                <p className="text-xs text-stone-500">Valores consolidados em cada hectare de terra cultivada</p>
+              </div>
+              <span className="text-xs font-mono bg-stone-100 px-3 py-1 rounded-full text-stone-600 font-semibold">
+                Área de referência: {totalAreaHectares.toFixed(2)} ha
+              </span>
+            </div>
+
+            {categoryHectareData.length === 0 ? (
+              <div className="text-center py-10 text-stone-400 text-sm">
+                Nenhum custo registrado para o filtro selecionado.
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="bg-stone-50 text-stone-500 uppercase tracking-wider font-bold border-b border-stone-200 text-[10px]">
+                      <th className="py-3 px-4">Categoria de Insumo / Serviço</th>
+                      <th className="py-3 px-4 text-right">Custo Total (R$)</th>
+                      <th className="py-3 px-4 text-right">Custo por Hectare (R$/ha)</th>
+                      <th className="py-3 px-4 text-right">Participação (%)</th>
+                      <th className="py-3 px-4">Representação Visão Geral</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-stone-100 font-sans">
+                    {categoryHectareData.map(item => (
+                      <tr key={item.category} className="hover:bg-stone-50 transition-colors">
+                        <td className="py-3.5 px-4 font-bold text-stone-850 text-sm">
+                          {item.category}
+                        </td>
+                        <td className="py-3.5 px-4 text-right font-mono font-bold text-stone-700">
+                          {item.totalVal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                        </td>
+                        <td className="py-3.5 px-4 text-right font-mono font-extrabold text-[#3a4d39] bg-stone-50/50">
+                          {item.perHa.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} <span className="text-[10px] text-stone-400 font-normal">/ha</span>
+                        </td>
+                        <td className="py-3.5 px-4 text-right font-mono text-stone-600">
+                          {item.percentage.toFixed(1)}%
+                        </td>
+                        <td className="py-3.5 px-4 min-w-[140px]">
+                          <div className="w-full bg-stone-100 rounded-full h-2.5 overflow-hidden">
+                            <div 
+                              className="bg-[#3a4d39] h-2.5 rounded-full" 
+                              style={{ width: `${Math.min(100, item.percentage)}%` }}
+                            ></div>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                    {/* Linha Totalizadora */}
+                    <tr className="bg-stone-50/80 font-bold text-stone-900 border-t-2 border-stone-200">
+                      <td className="py-3.5 px-4 uppercase tracking-wider text-xs">Total Consolidado</td>
+                      <td className="py-3.5 px-4 text-right font-mono text-sm text-stone-800">
+                        {totalCusto.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                      </td>
+                      <td className="py-3.5 px-4 text-right font-mono text-base text-[#3a4d39]">
+                        {custoMedioPorHectare.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} <span className="text-xs text-stone-500 font-normal">/ha</span>
+                      </td>
+                      <td className="py-3.5 px-4 text-right font-mono">100%</td>
+                      <td></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* Tabela 2: Custo por Hectare Detalhado por Talhão / Ciclo Produtivo */}
+          <div className="bg-white rounded-2xl border border-stone-200 p-6 shadow-xs space-y-4">
+            <div className="border-b border-stone-100 pb-3">
+              <h4 className="font-serif italic font-bold text-stone-900 text-base flex items-center gap-2">
+                <BarChart3 className="w-4 h-4 text-[#3a4d39]" />
+                Comparativo de Custo por Hectare Entre Talhões e Ciclos
+              </h4>
+              <p className="text-xs text-stone-500">Mapeamento direto de quanto cada talhão utilizou em insumos e operações por hectare</p>
+            </div>
+
+            {cycleHectareBreakdown.length === 0 ? (
+              <div className="text-center py-8 text-stone-400 text-sm">
+                Nenhum ciclo produtivo encontrado para a área selecionada.
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {cycleHectareBreakdown.map(item => (
+                  <div key={item.cycle.id} className="border border-stone-200 rounded-xl p-4 bg-stone-50/50 space-y-3">
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-stone-200 pb-2">
+                      <div>
+                        <span className="font-bold font-serif italic text-stone-900 text-base">{item.cycle.name}</span>
+                        <span className="text-xs text-stone-500 ml-2 font-medium">
+                          (Talhão: <b>{item.plot?.name || item.cycle.plotName}</b> — Área: <b>{item.plotSize} ha</b>)
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div className="text-right">
+                          <span className="text-[10px] text-stone-400 uppercase block font-semibold">CUSTO TOTAL NO TALHÃO</span>
+                          <span className="font-mono font-bold text-stone-800 text-sm">
+                            {item.totalCycleCost.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                          </span>
+                        </div>
+                        <div className="text-right bg-[#3a4d39]/10 px-3 py-1 rounded-lg">
+                          <span className="text-[10px] text-[#3a4d39] uppercase block font-bold">CUSTO / HECTARE</span>
+                          <span className="font-mono font-extrabold text-[#3a4d39] text-base">
+                            {item.cycleCostPerHa.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}/ha
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Quebra de Insumos e Categorias neste Ciclo */}
+                    <div>
+                      <p className="text-[11px] font-bold uppercase text-stone-400 mb-2">Composição de Insumos neste Hectare:</p>
+                      {Object.keys(item.categoryBreakdown).length === 0 ? (
+                        <p className="text-xs text-stone-400 italic">Nenhum custo lançado para este ciclo especificamente.</p>
+                      ) : (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                          {Object.entries(item.categoryBreakdown).map(([cat, val]) => {
+                            const numVal = Number(val);
+                            const catPerHa = item.plotSize > 0 ? numVal / item.plotSize : 0;
+                            return (
+                              <div key={cat} className="bg-white p-2.5 rounded-lg border border-stone-200 text-xs flex justify-between items-center">
+                                <span className="font-medium text-stone-700">{cat}:</span>
+                                <span className="font-mono font-bold text-stone-900">
+                                  {catPerHa.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} <span className="text-[10px] font-normal text-stone-400">/ha</span>
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
         </div>
       )}
 

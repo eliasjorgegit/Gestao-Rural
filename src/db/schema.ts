@@ -63,7 +63,41 @@ export const cycles = pgTable('cycles', {
   createdAt: timestamp('created_at').defaultNow(),
 });
 
-// 6. Cost Records (Lançamento de Custos)
+// 6. Inventory Items Table (Controle de Estoque)
+export const inventoryItems = pgTable('inventory_items', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id')
+    .references(() => users.id, { onDelete: 'cascade' })
+    .notNull(),
+  name: text('name').notNull(),
+  category: text('category').notNull(), // 'Adubos', 'Defensivos Agrícolas', 'Ferramentas', 'Mantimentos', 'Outros'
+  quantity: doublePrecision('quantity').notNull().default(0),
+  unit: text('unit').notNull(), // 'kg', 'L', 'unidades', 'sacos', etc.
+  minQuantity: doublePrecision('min_quantity').notNull().default(0),
+  unitCost: doublePrecision('unit_cost').notNull().default(0),
+  location: text('location'),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+// 7. Stock Movements Table (Histórico de Entrada e Saída)
+export const inventoryMovements = pgTable('inventory_movements', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id')
+    .references(() => users.id, { onDelete: 'cascade' })
+    .notNull(),
+  itemId: integer('item_id')
+    .references(() => inventoryItems.id, { onDelete: 'cascade' })
+    .notNull(),
+  type: text('type').notNull(), // 'entrada' | 'saida'
+  quantity: doublePrecision('quantity').notNull(),
+  date: text('date').notNull(), // YYYY-MM-DD
+  description: text('description'),
+  cycleId: integer('cycle_id')
+    .references(() => cycles.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+// 8. Cost Records (Lançamento de Custos)
 export const costs = pgTable('costs', {
   id: serial('id').primaryKey(),
   userId: integer('user_id')
@@ -76,10 +110,12 @@ export const costs = pgTable('costs', {
   category: text('category').notNull(), // Adubação, Manutenção, Mão de Obra, Plantio, Irrigação, Pulverização, Agrotóxicos, etc.
   description: text('description').notNull(),
   value: doublePrecision('value').notNull(), // R$
+  inventoryMovementId: integer('inventory_movement_id')
+    .references(() => inventoryMovements.id, { onDelete: 'set null' }),
   createdAt: timestamp('created_at').defaultNow(),
 });
 
-// 7. Production/Harvest Records (Registro de Produção/Colheita)
+// 9. Production/Harvest Records (Registro de Produção/Colheita)
 export const harvests = pgTable('harvests', {
   id: serial('id').primaryKey(),
   userId: integer('user_id')
@@ -170,40 +206,6 @@ export const harvestsRelations = relations(harvests, ({ one }) => ({
     references: [cycles.id],
   }),
 }));
-
-// 8. Inventory Items Table (Controle de Estoque)
-export const inventoryItems = pgTable('inventory_items', {
-  id: serial('id').primaryKey(),
-  userId: integer('user_id')
-    .references(() => users.id, { onDelete: 'cascade' })
-    .notNull(),
-  name: text('name').notNull(),
-  category: text('category').notNull(), // 'Adubos', 'Defensivos Agrícolas', 'Ferramentas', 'Mantimentos', 'Outros'
-  quantity: doublePrecision('quantity').notNull().default(0),
-  unit: text('unit').notNull(), // 'kg', 'L', 'unidades', 'sacos', etc.
-  minQuantity: doublePrecision('min_quantity').notNull().default(0),
-  unitCost: doublePrecision('unit_cost').notNull().default(0),
-  location: text('location'),
-  createdAt: timestamp('created_at').defaultNow(),
-});
-
-// 9. Stock Movements Table (Histórico de Entrada e Saída)
-export const inventoryMovements = pgTable('inventory_movements', {
-  id: serial('id').primaryKey(),
-  userId: integer('user_id')
-    .references(() => users.id, { onDelete: 'cascade' })
-    .notNull(),
-  itemId: integer('item_id')
-    .references(() => inventoryItems.id, { onDelete: 'cascade' })
-    .notNull(),
-  type: text('type').notNull(), // 'entrada' | 'saida'
-  quantity: doublePrecision('quantity').notNull(),
-  date: text('date').notNull(), // YYYY-MM-DD
-  description: text('description'),
-  cycleId: integer('cycle_id')
-    .references(() => cycles.id, { onDelete: 'set null' }),
-  createdAt: timestamp('created_at').defaultNow(),
-});
 
 // Relations for Inventory
 export const inventoryItemsRelations = relations(inventoryItems, ({ one, many }) => ({

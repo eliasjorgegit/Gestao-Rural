@@ -445,17 +445,91 @@ async function startServer() {
     try {
       const { id } = req.params;
       const dbUser = await getOrCreateUser(req.user!.uid, req.user!.email || "");
-      const result = await db.delete(costs)
-        .where(and(eq(costs.id, parseInt(id)), eq(costs.userId, dbUser.id)))
-        .returning();
+      const costId = parseInt(id);
 
-      if (result.length === 0) {
+      if (isNaN(costId)) {
+        return res.status(400).json({ error: "ID de custo inválido." });
+      }
+
+      // Fetch cost record
+      const existingCost = await db.select()
+        .from(costs)
+        .where(and(eq(costs.id, costId), eq(costs.userId, dbUser.id)))
+        .limit(1);
+
+      if (existingCost.length === 0) {
         return res.status(404).json({ error: "Registro de custo não encontrado." });
       }
-      res.json({ message: "Custo excluído com sucesso." });
+
+      const cost = existingCost[0];
+
+      // Find associated inventory movement if present
+      let movementToReturn: any = null;
+      if (cost.inventoryMovementId) {
+        try {
+          const mov = await db.select()
+            .from(inventoryMovements)
+            .where(and(eq(inventoryMovements.id, cost.inventoryMovementId), eq(inventoryMovements.userId, dbUser.id)))
+            .limit(1);
+          if (mov.length > 0) {
+            movementToReturn = mov[0];
+          }
+        } catch (mErr) {
+          console.warn("Could not query movement by inventoryMovementId:", mErr);
+        }
+      }
+
+      // Fallback matching if created prior to inventoryMovementId
+      if (!movementToReturn && cost.description && cost.description.startsWith("Consumo de Estoque:") && cost.cycleId && cost.date) {
+        try {
+          const candidateMovs = await db.select()
+            .from(inventoryMovements)
+            .where(and(
+              eq(inventoryMovements.userId, dbUser.id),
+              eq(inventoryMovements.type, 'saida'),
+              eq(inventoryMovements.cycleId, cost.cycleId),
+              eq(inventoryMovements.date, cost.date)
+            ));
+          if (candidateMovs.length > 0) {
+            movementToReturn = candidateMovs[0];
+          }
+        } catch (fErr) {
+          console.warn("Could not query fallback candidate movements:", fErr);
+        }
+      }
+
+      // Unlink inventoryMovementId from cost or delete cost directly
+      await db.delete(costs)
+        .where(and(eq(costs.id, costId), eq(costs.userId, dbUser.id)));
+
+      // If a linked stock output movement was found, return quantity back to inventory stock and delete movement
+      if (movementToReturn) {
+        try {
+          const itemToUpdate = await db.select()
+            .from(inventoryItems)
+            .where(and(eq(inventoryItems.id, movementToReturn.itemId), eq(inventoryItems.userId, dbUser.id)))
+            .limit(1);
+
+          if (itemToUpdate.length > 0) {
+            const item = itemToUpdate[0];
+            const restoredQuantity = Number(item.quantity || 0) + Number(movementToReturn.quantity || 0);
+            await db.update(inventoryItems)
+              .set({ quantity: restoredQuantity })
+              .where(eq(inventoryItems.id, item.id));
+          }
+
+          // Delete the associated inventory movement
+          await db.delete(inventoryMovements)
+            .where(eq(inventoryMovements.id, movementToReturn.id));
+        } catch (stockErr) {
+          console.error("Error restoring stock quantity during cost deletion:", stockErr);
+        }
+      }
+
+      res.json({ message: "Custo excluído com sucesso.", stockRestored: !!movementToReturn });
     } catch (error: any) {
       console.error("Error deleting cost:", error);
-      res.status(500).json({ error: "Erro ao excluir custo." });
+      res.status(500).json({ error: error?.message || "Erro ao excluir custo." });
     }
   });
 
@@ -639,8 +713,30 @@ async function startServer() {
     try {
       const { id } = req.params;
       const dbUser = await getOrCreateUser(req.user!.uid, req.user!.email || "");
+      const itemId = parseInt(id);
+
+      // 1. Find all movements linked to this item
+      const itemMovements = await db.select({ id: inventoryMovements.id })
+        .from(inventoryMovements)
+        .where(and(eq(inventoryMovements.itemId, itemId), eq(inventoryMovements.userId, dbUser.id)));
+
+      const movementIds = itemMovements.map(m => m.id);
+
+      // 2. Unlink/delete any costs created from these movements
+      if (movementIds.length > 0) {
+        for (const movId of movementIds) {
+          await db.delete(costs)
+            .where(and(eq(costs.inventoryMovementId, movId), eq(costs.userId, dbUser.id)));
+        }
+
+        // Delete movements first to clean up foreign keys
+        await db.delete(inventoryMovements)
+          .where(and(eq(inventoryMovements.itemId, itemId), eq(inventoryMovements.userId, dbUser.id)));
+      }
+
+      // 3. Delete the item
       const result = await db.delete(inventoryItems)
-        .where(and(eq(inventoryItems.id, parseInt(id)), eq(inventoryItems.userId, dbUser.id)))
+        .where(and(eq(inventoryItems.id, itemId), eq(inventoryItems.userId, dbUser.id)))
         .returning();
 
       if (result.length === 0) {
@@ -649,7 +745,7 @@ async function startServer() {
       res.json({ message: "Item de estoque excluído com sucesso." });
     } catch (error: any) {
       console.error("Error deleting inventory item:", error);
-      res.status(500).json({ error: "Erro ao excluir item de estoque. Verifique se ele possui movimentações vinculadas." });
+      res.status(500).json({ error: "Erro ao excluir item de estoque." });
     }
   });
 
@@ -763,6 +859,7 @@ async function startServer() {
               category: costCategory,
               description: `Consumo de Estoque: ${item.name} (${parsedQty} ${item.unit})`,
               value: calculatedCost,
+              inventoryMovementId: movement[0].id,
             });
         }
       }
@@ -778,11 +875,12 @@ async function startServer() {
     try {
       const { id } = req.params;
       const dbUser = await getOrCreateUser(req.user!.uid, req.user!.email || "");
+      const movId = parseInt(id);
 
       // Get movement
       const existingMov = await db.select()
         .from(inventoryMovements)
-        .where(and(eq(inventoryMovements.id, parseInt(id)), eq(inventoryMovements.userId, dbUser.id)))
+        .where(and(eq(inventoryMovements.id, movId), eq(inventoryMovements.userId, dbUser.id)))
         .limit(1);
 
       if (existingMov.length === 0) {
@@ -816,9 +914,13 @@ async function startServer() {
           .where(eq(inventoryItems.id, item.id));
       }
 
+      // Delete linked cost if exists
+      await db.delete(costs)
+        .where(and(eq(costs.inventoryMovementId, movId), eq(costs.userId, dbUser.id)));
+
       // Delete the movement
       await db.delete(inventoryMovements)
-        .where(eq(inventoryMovements.id, mov.id));
+        .where(eq(inventoryMovements.id, movId));
 
       res.json({ message: "Movimentação estornada com sucesso." });
     } catch (error: any) {
