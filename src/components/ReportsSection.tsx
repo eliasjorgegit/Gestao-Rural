@@ -16,8 +16,11 @@ import {
   Layers,
   PieChart,
   Scale,
-  Sprout
+  Sprout,
+  Download,
+  Database
 } from 'lucide-react';
+import * as XLSX from 'xlsx';
 
 export const ReportsSection: React.FC = () => {
   const { fetchWithAuth } = useAuth();
@@ -275,6 +278,60 @@ export const ReportsSection: React.FC = () => {
     document.body.removeChild(link);
   };
 
+  const exportBackupJSON = async () => {
+    try {
+      const response = await fetchWithAuth('/api/export');
+      if (response.ok) {
+        const data = await response.json();
+        const jsonString = JSON.stringify(data, null, 2);
+        const blob = new Blob([jsonString], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `backup_sistema_gestao_rural_${new Date().toISOString().split('T')[0]}.json`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      } else {
+        alert("Erro ao exportar dados.");
+      }
+    } catch (e) {
+      console.error(e);
+      alert("Erro ao exportar dados.");
+    }
+  };
+
+  const exportBackupExcel = async () => {
+    try {
+      const response = await fetchWithAuth('/api/export');
+      if (response.ok) {
+        const data = await response.json();
+        const workbook = XLSX.utils.book_new();
+
+        // Convert each array to a worksheet
+        const tables = ['properties', 'activities', 'plots', 'cycles', 'costs', 'harvests', 'inventoryItems', 'inventoryMovements'];
+        tables.forEach(tableName => {
+          if (data[tableName] && data[tableName].length > 0) {
+            const worksheet = XLSX.utils.json_to_sheet(data[tableName]);
+            XLSX.utils.book_append_sheet(workbook, worksheet, tableName);
+          } else {
+            // Add empty sheet with header if no data
+            const worksheet = XLSX.utils.json_to_sheet([{}]);
+            XLSX.utils.book_append_sheet(workbook, worksheet, tableName);
+          }
+        });
+
+        XLSX.writeFile(workbook, `backup_sistema_gestao_rural_${new Date().toISOString().split('T')[0]}.xlsx`);
+      } else {
+        alert("Erro ao exportar dados.");
+      }
+    } catch (e) {
+      console.error(e);
+      alert("Erro ao exportar dados.");
+    }
+  };
+
   // Printing function
   const handlePrint = () => {
     try {
@@ -344,6 +401,35 @@ export const ReportsSection: React.FC = () => {
               </select>
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* Backup Export Section - Ocultado na impressão */}
+      <div className="bg-white rounded-2xl border border-stone-200 shadow-xs p-5 print:hidden flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 bg-[#ece3ce]/40 rounded-xl text-[#3a4d39]">
+            <Database className="w-5 h-5" />
+          </div>
+          <div>
+            <h3 className="font-serif italic font-bold text-stone-850 text-sm">Backup de Segurança</h3>
+            <p className="text-xs text-stone-500 font-sans">Exporte todos os dados cadastrados (Talhões, Ciclos, Estoque, Custos) para seu dispositivo.</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          <button
+            onClick={exportBackupJSON}
+            className="flex-1 sm:flex-none flex items-center justify-center gap-2 text-xs bg-white border border-stone-200 hover:bg-stone-50 text-stone-700 px-4 py-2.5 rounded-xl transition-all shadow-xxs cursor-pointer font-medium"
+          >
+            <Download className="w-3.5 h-3.5 text-stone-500" />
+            JSON
+          </button>
+          <button
+            onClick={exportBackupExcel}
+            className="flex-1 sm:flex-none flex items-center justify-center gap-2 text-xs bg-white border border-stone-200 hover:bg-stone-50 text-stone-700 px-4 py-2.5 rounded-xl transition-all shadow-xxs cursor-pointer font-medium"
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5 text-green-600" />
+            Excel
+          </button>
         </div>
       </div>
 

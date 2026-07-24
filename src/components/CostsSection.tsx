@@ -24,6 +24,8 @@ export const CostsSection: React.FC<CostsSectionProps> = ({ onRefresh }) => {
   const [category, setCategory] = useState('');
   const [description, setDescription] = useState('');
   const [value, setValue] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState('');
+  const [payer, setPayer] = useState('');
 
   const fetchData = async () => {
     try {
@@ -57,6 +59,8 @@ export const CostsSection: React.FC<CostsSectionProps> = ({ onRefresh }) => {
     setCategory('');
     setDescription('');
     setValue('');
+    setPaymentMethod('');
+    setPayer('');
     setIsAdding(false);
     setEditingCost(null);
   };
@@ -68,6 +72,8 @@ export const CostsSection: React.FC<CostsSectionProps> = ({ onRefresh }) => {
     setCategory(cost.category);
     setDescription(cost.description);
     setValue(cost.value.toString());
+    setPaymentMethod(cost.paymentMethod || '');
+    setPayer(cost.payer || '');
     setIsAdding(false);
   };
 
@@ -93,6 +99,8 @@ export const CostsSection: React.FC<CostsSectionProps> = ({ onRefresh }) => {
         category,
         description: description.trim(),
         value: costValue,
+        paymentMethod: paymentMethod || undefined,
+        payer: payer.trim() || undefined,
       };
 
       if (editingCost) {
@@ -286,6 +294,41 @@ export const CostsSection: React.FC<CostsSectionProps> = ({ onRefresh }) => {
                       required
                     />
                   </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-stone-500 uppercase tracking-wider mb-1.5">
+                      Forma de Pagamento
+                    </label>
+                    <select
+                      id="cost-payment-select"
+                      value={paymentMethod}
+                      onChange={(e) => setPaymentMethod(e.target.value)}
+                      className="w-full px-4 py-2.5 rounded-xl border border-stone-200 focus:outline-hidden focus:border-[#3a4d39] text-sm font-sans bg-white"
+                    >
+                      <option value="">-- Opcional --</option>
+                      <option value="Dinheiro">Dinheiro</option>
+                      <option value="Pix">Pix</option>
+                      <option value="Cartão de Crédito">Cartão de Crédito</option>
+                      <option value="Cartão de Débito">Cartão de Débito</option>
+                      <option value="Cheque">Cheque</option>
+                      <option value="Boleto">Boleto</option>
+                      <option value="Transferência">Transferência Bancária</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-stone-500 uppercase tracking-wider mb-1.5">
+                      Pagador
+                    </label>
+                    <input
+                      id="cost-payer-input"
+                      type="text"
+                      placeholder="Quem efetuou o pagamento"
+                      value={payer}
+                      onChange={(e) => setPayer(e.target.value)}
+                      className="w-full px-4 py-2.5 rounded-xl border border-stone-200 focus:outline-hidden focus:border-[#3a4d39] text-sm font-sans bg-white"
+                    />
+                  </div>
                 </div>
 
                 <div className="flex gap-2 justify-end">
@@ -328,6 +371,7 @@ export const CostsSection: React.FC<CostsSectionProps> = ({ onRefresh }) => {
                       <th className="py-3 px-4">Ciclo / Talhão</th>
                       <th className="py-3 px-4">Categoria</th>
                       <th className="py-3 px-4">Descrição</th>
+                      <th className="py-3 px-4">Pagamento</th>
                       <th className="py-3 px-4 text-right">Valor (R$)</th>
                       <th className="py-3 px-4 text-center">Ações</th>
                     </tr>
@@ -350,6 +394,11 @@ export const CostsSection: React.FC<CostsSectionProps> = ({ onRefresh }) => {
                           </span>
                         </td>
                         <td className="py-3.5 px-4 text-stone-600 max-w-xs truncate">{cost.description}</td>
+                        <td className="py-3.5 px-4">
+                          {cost.paymentMethod && <span className="block text-xs text-stone-600">{cost.paymentMethod}</span>}
+                          {cost.payer && <span className="block text-xs text-stone-400 font-medium">{cost.payer}</span>}
+                          {!cost.paymentMethod && !cost.payer && <span className="text-xs text-stone-300">-</span>}
+                        </td>
                         <td className="py-3.5 px-4 text-right font-mono font-bold text-stone-900">
                           {cost.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                         </td>

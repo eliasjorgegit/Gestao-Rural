@@ -16,6 +16,7 @@ export const PlotsSection: React.FC<PlotsSectionProps> = ({ onRefresh }) => {
   // Form states
   const [isAdding, setIsAdding] = useState(false);
   const [editingPlot, setEditingPlot] = useState<Plot | null>(null);
+  const [deletingPlot, setDeletingPlot] = useState<Plot | null>(null);
 
   const [name, setName] = useState('');
   const [size, setSize] = useState('');
@@ -114,10 +115,6 @@ export const PlotsSection: React.FC<PlotsSectionProps> = ({ onRefresh }) => {
   };
 
   const handleDelete = async (id: number) => {
-    if (!confirm('Deseja realmente remover este talhão? Isso afetará os ciclos produtivos associados.')) {
-      return;
-    }
-
     try {
       const res = await fetchWithAuth(`/api/plots/${id}`, {
         method: 'DELETE',
@@ -125,14 +122,17 @@ export const PlotsSection: React.FC<PlotsSectionProps> = ({ onRefresh }) => {
 
       if (res.ok) {
         setPlots(plots.filter(p => p.id !== id));
+        setDeletingPlot(null);
         if (onRefresh) onRefresh();
       } else {
         const errData = await res.json();
         setError(errData.error || 'Erro ao remover talhão.');
+        setDeletingPlot(null);
       }
     } catch (err) {
       console.error(err);
       setError('Erro ao conectar com o servidor.');
+      setDeletingPlot(null);
     }
   };
 
@@ -281,7 +281,7 @@ export const PlotsSection: React.FC<PlotsSectionProps> = ({ onRefresh }) => {
                   </button>
                   <button
                     id={`delete-plot-btn-${plot.id}`}
-                    onClick={() => handleDelete(plot.id)}
+                    onClick={() => setDeletingPlot(plot)}
                     className="flex items-center gap-1 text-xs text-stone-500 hover:text-red-600 px-2.5 py-1 hover:bg-red-50 rounded-lg transition-all cursor-pointer font-medium"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
@@ -293,6 +293,40 @@ export const PlotsSection: React.FC<PlotsSectionProps> = ({ onRefresh }) => {
           </div>
         )}
       </div>
+
+      {/* MODAL DE CONFIRMAÇÃO DE EXCLUSÃO DE TALHÃO */}
+      {deletingPlot && (
+        <div className="fixed inset-0 bg-stone-950/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-xl space-y-4 border border-stone-200">
+            <div className="flex items-center gap-3 text-rose-600">
+              <AlertTriangle className="w-6 h-6" />
+              <h3 className="font-serif italic font-bold text-lg text-stone-900">Excluir Talhão</h3>
+            </div>
+            <p className="text-sm text-stone-600 leading-relaxed">
+              Deseja realmente remover o talhão <strong className="font-bold text-stone-900">"{deletingPlot.name}"</strong>?
+            </p>
+            <p className="text-xs text-rose-800 bg-rose-50 p-3 rounded-xl border border-rose-200/80">
+              <b>Atenção:</b> Esta ação apagará todos os ciclos produtivos, custos e colheitas associados a este talhão!
+            </p>
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                id="cancel-delete-plot-btn"
+                onClick={() => setDeletingPlot(null)}
+                className="px-4 py-2 text-sm text-stone-600 hover:bg-stone-100 rounded-xl transition-all cursor-pointer font-medium"
+              >
+                Cancelar
+              </button>
+              <button
+                id="confirm-delete-plot-btn"
+                onClick={() => handleDelete(deletingPlot.id)}
+                className="px-4 py-2 text-sm bg-rose-600 hover:bg-rose-700 text-white font-medium rounded-xl shadow-xs transition-all cursor-pointer"
+              >
+                Confirmar Exclusão
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

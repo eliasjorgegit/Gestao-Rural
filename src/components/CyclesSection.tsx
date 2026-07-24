@@ -18,6 +18,7 @@ export const CyclesSection: React.FC<CyclesSectionProps> = ({ onRefresh }) => {
   // Form states
   const [isAdding, setIsAdding] = useState(false);
   const [editingCycle, setEditingCycle] = useState<Cycle | null>(null);
+  const [deletingCycle, setDeletingCycle] = useState<Cycle | null>(null);
 
   const [plotId, setPlotId] = useState('');
   const [activityId, setActivityId] = useState('');
@@ -133,10 +134,6 @@ export const CyclesSection: React.FC<CyclesSectionProps> = ({ onRefresh }) => {
   };
 
   const handleDelete = async (id: number) => {
-    if (!confirm('Deseja realmente remover este ciclo produtivo? Isso apagará todos os lançamentos de custo e produção vinculados.')) {
-      return;
-    }
-
     try {
       const res = await fetchWithAuth(`/api/cycles/${id}`, {
         method: 'DELETE',
@@ -144,14 +141,17 @@ export const CyclesSection: React.FC<CyclesSectionProps> = ({ onRefresh }) => {
 
       if (res.ok) {
         setCycles(cycles.filter(c => c.id !== id));
+        setDeletingCycle(null);
         if (onRefresh) onRefresh();
       } else {
         const errData = await res.json();
         setError(errData.error || 'Erro ao remover ciclo produtivo.');
+        setDeletingCycle(null);
       }
     } catch (err) {
       console.error(err);
       setError('Erro ao conectar.');
+      setDeletingCycle(null);
     }
   };
 
@@ -397,7 +397,7 @@ export const CyclesSection: React.FC<CyclesSectionProps> = ({ onRefresh }) => {
                       </button>
                       <button
                         id={`delete-cycle-btn-${cycle.id}`}
-                        onClick={() => handleDelete(cycle.id)}
+                        onClick={() => setDeletingCycle(cycle)}
                         className="flex items-center gap-1 text-xs text-stone-500 hover:text-red-600 px-2.5 py-1 hover:bg-red-50 rounded-lg transition-all cursor-pointer font-medium"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
@@ -411,6 +411,40 @@ export const CyclesSection: React.FC<CyclesSectionProps> = ({ onRefresh }) => {
           </>
         )}
       </div>
+
+      {/* MODAL DE CONFIRMAÇÃO DE EXCLUSÃO DE CICLO */}
+      {deletingCycle && (
+        <div className="fixed inset-0 bg-stone-950/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-xl space-y-4 border border-stone-200">
+            <div className="flex items-center gap-3 text-rose-600">
+              <AlertTriangle className="w-6 h-6" />
+              <h3 className="font-serif italic font-bold text-lg text-stone-900">Excluir Ciclo Produtivo</h3>
+            </div>
+            <p className="text-sm text-stone-600 leading-relaxed">
+              Deseja realmente remover o ciclo <strong className="font-bold text-stone-900">"{deletingCycle.name}"</strong>?
+            </p>
+            <p className="text-xs text-rose-800 bg-rose-50 p-3 rounded-xl border border-rose-200/80">
+              <b>Atenção:</b> Esta ação apagará todos os lançamentos de custo e produção vinculados a este ciclo!
+            </p>
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                id="cancel-delete-cycle-btn"
+                onClick={() => setDeletingCycle(null)}
+                className="px-4 py-2 text-sm text-stone-600 hover:bg-stone-100 rounded-xl transition-all cursor-pointer font-medium"
+              >
+                Cancelar
+              </button>
+              <button
+                id="confirm-delete-cycle-btn"
+                onClick={() => handleDelete(deletingCycle.id)}
+                className="px-4 py-2 text-sm bg-rose-600 hover:bg-rose-700 text-white font-medium rounded-xl shadow-xs transition-all cursor-pointer"
+              >
+                Confirmar Exclusão
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

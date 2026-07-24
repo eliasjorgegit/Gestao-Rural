@@ -110,6 +110,8 @@ export const costs = pgTable('costs', {
   category: text('category').notNull(), // Adubação, Manutenção, Mão de Obra, Plantio, Irrigação, Pulverização, Agrotóxicos, etc.
   description: text('description').notNull(),
   value: doublePrecision('value').notNull(), // R$
+  paymentMethod: text('payment_method'), // Dinheiro, Cheque, Cartão, Pix
+  payer: text('payer'), // Name of the person who paid
   inventoryMovementId: integer('inventory_movement_id')
     .references(() => inventoryMovements.id, { onDelete: 'set null' }),
   createdAt: timestamp('created_at').defaultNow(),

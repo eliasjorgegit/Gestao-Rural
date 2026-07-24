@@ -48,6 +48,8 @@ export interface Cost {
   category: string;
   description: string;
   value: number; // R$
+  paymentMethod?: string;
+  payer?: string;
   inventoryMovementId?: number;
   createdAt?: string;
   

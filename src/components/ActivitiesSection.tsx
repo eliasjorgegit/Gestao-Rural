@@ -17,6 +17,7 @@ export const ActivitiesSection: React.FC<ActivitiesSectionProps> = ({ onRefresh 
   const [newName, setNewName] = useState('');
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editingName, setEditingName] = useState('');
+  const [deletingActivity, setDeletingActivity] = useState<Activity | null>(null);
 
   const fetchActivities = async () => {
     try {
@@ -92,10 +93,6 @@ export const ActivitiesSection: React.FC<ActivitiesSectionProps> = ({ onRefresh 
   };
 
   const handleDelete = async (id: number) => {
-    if (!confirm('Deseja realmente remover esta atividade? Isso pode afetar os ciclos produtivos vinculados.')) {
-      return;
-    }
-
     try {
       const res = await fetchWithAuth(`/api/activities/${id}`, {
         method: 'DELETE',
@@ -104,14 +101,17 @@ export const ActivitiesSection: React.FC<ActivitiesSectionProps> = ({ onRefresh 
       if (res.ok) {
         setActivities(activities.filter(act => act.id !== id));
         setError(null);
+        setDeletingActivity(null);
         if (onRefresh) onRefresh();
       } else {
         const errData = await res.json();
         setError(errData.error || 'Erro ao remover atividade.');
+        setDeletingActivity(null);
       }
     } catch (err) {
       console.error(err);
       setError('Erro ao conectar com o servidor.');
+      setDeletingActivity(null);
     }
   };
 
@@ -213,7 +213,7 @@ export const ActivitiesSection: React.FC<ActivitiesSectionProps> = ({ onRefresh 
                       </button>
                       <button
                         id={`delete-activity-btn-${act.id}`}
-                        onClick={() => handleDelete(act.id)}
+                        onClick={() => setDeletingActivity(act)}
                         className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
@@ -226,6 +226,40 @@ export const ActivitiesSection: React.FC<ActivitiesSectionProps> = ({ onRefresh 
           </div>
         )}
       </div>
+
+      {/* MODAL DE CONFIRMAÇÃO DE EXCLUSÃO DE ATIVIDADE */}
+      {deletingActivity && (
+        <div className="fixed inset-0 bg-stone-950/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-xl space-y-4 border border-stone-200">
+            <div className="flex items-center gap-3 text-rose-600">
+              <AlertTriangle className="w-6 h-6" />
+              <h3 className="font-serif italic font-bold text-lg text-stone-900">Excluir Atividade</h3>
+            </div>
+            <p className="text-sm text-stone-600 leading-relaxed">
+              Deseja realmente remover a atividade <strong className="font-bold text-stone-900">"{deletingActivity.name}"</strong>?
+            </p>
+            <p className="text-xs text-rose-800 bg-rose-50 p-3 rounded-xl border border-rose-200/80">
+              <b>Atenção:</b> Esta ação apagará todos os ciclos produtivos, custos e colheitas vinculados a esta cultura!
+            </p>
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                id="cancel-delete-activity-btn"
+                onClick={() => setDeletingActivity(null)}
+                className="px-4 py-2 text-sm text-stone-600 hover:bg-stone-100 rounded-xl transition-all cursor-pointer font-medium"
+              >
+                Cancelar
+              </button>
+              <button
+                id="confirm-delete-activity-btn"
+                onClick={() => handleDelete(deletingActivity.id)}
+                className="px-4 py-2 text-sm bg-rose-600 hover:bg-rose-700 text-white font-medium rounded-xl shadow-xs transition-all cursor-pointer"
+              >
+                Confirmar Exclusão
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

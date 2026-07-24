@@ -17,6 +17,7 @@ export const HarvestsSection: React.FC<HarvestsSectionProps> = ({ onRefresh }) =
   // Form states
   const [isAdding, setIsAdding] = useState(false);
   const [editingHarvest, setEditingHarvest] = useState<Harvest | null>(null);
+  const [deletingHarvest, setDeletingHarvest] = useState<Harvest | null>(null);
 
   const [cycleId, setCycleId] = useState('');
   const [date, setDate] = useState('');
@@ -139,10 +140,6 @@ export const HarvestsSection: React.FC<HarvestsSectionProps> = ({ onRefresh }) =
   };
 
   const handleDelete = async (id: number) => {
-    if (!confirm('Deseja realmente remover este registro de colheita/venda?')) {
-      return;
-    }
-
     try {
       const res = await fetchWithAuth(`/api/harvests/${id}`, {
         method: 'DELETE',
@@ -150,14 +147,17 @@ export const HarvestsSection: React.FC<HarvestsSectionProps> = ({ onRefresh }) =
 
       if (res.ok) {
         setHarvests(harvests.filter(h => h.id !== id));
+        setDeletingHarvest(null);
         if (onRefresh) onRefresh();
       } else {
         const errData = await res.json();
         setError(errData.error || 'Erro ao remover colheita.');
+        setDeletingHarvest(null);
       }
     } catch (err) {
       console.error(err);
       setError('Erro ao conectar.');
+      setDeletingHarvest(null);
     }
   };
 
@@ -372,7 +372,7 @@ export const HarvestsSection: React.FC<HarvestsSectionProps> = ({ onRefresh }) =
                             </button>
                             <button
                               id={`delete-harvest-btn-${h.id}`}
-                              onClick={() => handleDelete(h.id)}
+                              onClick={() => setDeletingHarvest(h)}
                               className="p-1.5 text-stone-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
                               title="Excluir"
                             >
@@ -389,6 +389,37 @@ export const HarvestsSection: React.FC<HarvestsSectionProps> = ({ onRefresh }) =
           </>
         )}
       </div>
+
+      {/* MODAL DE CONFIRMAÇÃO DE EXCLUSÃO DE COLHEITA */}
+      {deletingHarvest && (
+        <div className="fixed inset-0 bg-stone-950/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-xl space-y-4 border border-stone-200">
+            <div className="flex items-center gap-3 text-rose-600">
+              <AlertTriangle className="w-6 h-6" />
+              <h3 className="font-serif italic font-bold text-lg text-stone-900">Excluir Registro</h3>
+            </div>
+            <p className="text-sm text-stone-600 leading-relaxed">
+              Deseja realmente remover este registro de colheita/venda do ciclo <strong className="font-bold text-stone-900">"{deletingHarvest.cycleName}"</strong>?
+            </p>
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                id="cancel-delete-harvest-btn"
+                onClick={() => setDeletingHarvest(null)}
+                className="px-4 py-2 text-sm text-stone-600 hover:bg-stone-100 rounded-xl transition-all cursor-pointer font-medium"
+              >
+                Cancelar
+              </button>
+              <button
+                id="confirm-delete-harvest-btn"
+                onClick={() => handleDelete(deletingHarvest.id)}
+                className="px-4 py-2 text-sm bg-rose-600 hover:bg-rose-700 text-white font-medium rounded-xl shadow-xs transition-all cursor-pointer"
+              >
+                Confirmar Exclusão
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -154,9 +154,12 @@ async function startServer() {
   app.delete("/api/activities/:id", requireAuth, async (req: AuthRequest, res) => {
     try {
       const { id } = req.params;
+      const actId = parseInt(id);
+      if (isNaN(actId)) return res.status(400).json({ error: "ID inválido." });
+
       const dbUser = await getOrCreateUser(req.user!.uid, req.user!.email || "");
       const result = await db.delete(activities)
-        .where(and(eq(activities.id, parseInt(id)), eq(activities.userId, dbUser.id)))
+        .where(and(eq(activities.id, actId), eq(activities.userId, dbUser.id)))
         .returning();
 
       if (result.length === 0) {
@@ -191,12 +194,17 @@ async function startServer() {
         return res.status(400).json({ error: "Nome, tamanho (hectares) e tipo de solo/relevo são obrigatórios." });
       }
 
+      const parsedSize = parseFloat(size);
+      if (isNaN(parsedSize) || parsedSize <= 0) {
+        return res.status(400).json({ error: "Tamanho inválido. Deve ser maior que zero." });
+      }
+
       const dbUser = await getOrCreateUser(req.user!.uid, req.user!.email || "");
       const result = await db.insert(plots)
         .values({
           userId: dbUser.id,
           name,
-          size: parseFloat(size),
+          size: parsedSize,
           soilType,
         })
         .returning();
@@ -215,10 +223,20 @@ async function startServer() {
         return res.status(400).json({ error: "Nome, tamanho e tipo de solo são obrigatórios." });
       }
 
+      const plotId = parseInt(id);
+      if (isNaN(plotId)) {
+        return res.status(400).json({ error: "ID inválido." });
+      }
+
+      const parsedSize = parseFloat(size);
+      if (isNaN(parsedSize) || parsedSize <= 0) {
+        return res.status(400).json({ error: "Tamanho inválido. Deve ser maior que zero." });
+      }
+
       const dbUser = await getOrCreateUser(req.user!.uid, req.user!.email || "");
       const result = await db.update(plots)
-        .set({ name, size: parseFloat(size), soilType })
-        .where(and(eq(plots.id, parseInt(id)), eq(plots.userId, dbUser.id)))
+        .set({ name, size: parsedSize, soilType })
+        .where(and(eq(plots.id, plotId), eq(plots.userId, dbUser.id)))
         .returning();
 
       if (result.length === 0) {
@@ -234,9 +252,12 @@ async function startServer() {
   app.delete("/api/plots/:id", requireAuth, async (req: AuthRequest, res) => {
     try {
       const { id } = req.params;
+      const plotId = parseInt(id);
+      if (isNaN(plotId)) return res.status(400).json({ error: "ID inválido." });
+
       const dbUser = await getOrCreateUser(req.user!.uid, req.user!.email || "");
       const result = await db.delete(plots)
-        .where(and(eq(plots.id, parseInt(id)), eq(plots.userId, dbUser.id)))
+        .where(and(eq(plots.id, plotId), eq(plots.userId, dbUser.id)))
         .returning();
 
       if (result.length === 0) {
@@ -289,12 +310,26 @@ async function startServer() {
         return res.status(400).json({ error: "Todos os campos são obrigatórios para o ciclo produtivo." });
       }
 
+      const pId = parseInt(plotId);
+      const aId = parseInt(activityId);
+      if (isNaN(pId) || isNaN(aId)) {
+        return res.status(400).json({ error: "IDs inválidos." });
+      }
+
       const dbUser = await getOrCreateUser(req.user!.uid, req.user!.email || "");
+
+      // Tenant Isolation: Verify ownership of related entities (IDOR protection)
+      const userPlot = await db.select().from(plots).where(and(eq(plots.id, pId), eq(plots.userId, dbUser.id))).limit(1);
+      if (userPlot.length === 0) return res.status(403).json({ error: "Talhão inválido ou sem permissão." });
+
+      const userActivity = await db.select().from(activities).where(and(eq(activities.id, aId), eq(activities.userId, dbUser.id))).limit(1);
+      if (userActivity.length === 0) return res.status(403).json({ error: "Atividade inválida ou sem permissão." });
+
       const result = await db.insert(cycles)
         .values({
           userId: dbUser.id,
-          plotId: parseInt(plotId),
-          activityId: parseInt(activityId),
+          plotId: pId,
+          activityId: aId,
           name,
           startDate,
           endDate,
@@ -316,17 +351,32 @@ async function startServer() {
         return res.status(400).json({ error: "Todos os campos são obrigatórios." });
       }
 
+      const cycleId = parseInt(id);
+      const pId = parseInt(plotId);
+      const aId = parseInt(activityId);
+      if (isNaN(cycleId) || isNaN(pId) || isNaN(aId)) {
+        return res.status(400).json({ error: "IDs inválidos." });
+      }
+
       const dbUser = await getOrCreateUser(req.user!.uid, req.user!.email || "");
+
+      // Tenant Isolation: Verify ownership of related entities (IDOR protection)
+      const userPlot = await db.select().from(plots).where(and(eq(plots.id, pId), eq(plots.userId, dbUser.id))).limit(1);
+      if (userPlot.length === 0) return res.status(403).json({ error: "Talhão inválido ou sem permissão." });
+
+      const userActivity = await db.select().from(activities).where(and(eq(activities.id, aId), eq(activities.userId, dbUser.id))).limit(1);
+      if (userActivity.length === 0) return res.status(403).json({ error: "Atividade inválida ou sem permissão." });
+
       const result = await db.update(cycles)
         .set({
-          plotId: parseInt(plotId),
-          activityId: parseInt(activityId),
+          plotId: pId,
+          activityId: aId,
           name,
           startDate,
           endDate,
           status: status || "Ativo",
         })
-        .where(and(eq(cycles.id, parseInt(id)), eq(cycles.userId, dbUser.id)))
+        .where(and(eq(cycles.id, cycleId), eq(cycles.userId, dbUser.id)))
         .returning();
 
       if (result.length === 0) {
@@ -342,9 +392,12 @@ async function startServer() {
   app.delete("/api/cycles/:id", requireAuth, async (req: AuthRequest, res) => {
     try {
       const { id } = req.params;
+      const cycleId = parseInt(id);
+      if (isNaN(cycleId)) return res.status(400).json({ error: "ID inválido." });
+
       const dbUser = await getOrCreateUser(req.user!.uid, req.user!.email || "");
       const result = await db.delete(cycles)
-        .where(and(eq(cycles.id, parseInt(id)), eq(cycles.userId, dbUser.id)))
+        .where(and(eq(cycles.id, cycleId), eq(cycles.userId, dbUser.id)))
         .returning();
 
       if (result.length === 0) {
@@ -369,6 +422,8 @@ async function startServer() {
         category: costs.category,
         description: costs.description,
         value: costs.value,
+        paymentMethod: costs.paymentMethod,
+        payer: costs.payer,
         createdAt: costs.createdAt,
         cycleName: cycles.name,
         plotName: plots.name,
@@ -388,20 +443,37 @@ async function startServer() {
 
   app.post("/api/costs", requireAuth, async (req: AuthRequest, res) => {
     try {
-      const { cycleId, date, category, description, value } = req.body;
+      const { cycleId, date, category, description, value, paymentMethod, payer } = req.body;
       if (!cycleId || !date || !category || !description || value === undefined) {
         return res.status(400).json({ error: "Todos os campos do custo são obrigatórios." });
       }
 
+      const parsedValue = parseFloat(value);
+      const cId = parseInt(cycleId);
+      
+      if (isNaN(parsedValue) || parsedValue < 0) {
+        return res.status(400).json({ error: "Valor inválido ou negativo." });
+      }
+      if (isNaN(cId)) {
+        return res.status(400).json({ error: "Ciclo inválido." });
+      }
+
       const dbUser = await getOrCreateUser(req.user!.uid, req.user!.email || "");
+      
+      // Tenant Isolation: Verify cycle belongs to the user
+      const userCycle = await db.select().from(cycles).where(and(eq(cycles.id, cId), eq(cycles.userId, dbUser.id))).limit(1);
+      if (userCycle.length === 0) return res.status(403).json({ error: "Ciclo produtivo não encontrado ou sem permissão." });
+
       const result = await db.insert(costs)
         .values({
           userId: dbUser.id,
-          cycleId: parseInt(cycleId),
+          cycleId: cId,
           date,
           category,
           description,
-          value: parseFloat(value),
+          value: parsedValue,
+          paymentMethod: paymentMethod || null,
+          payer: payer || null,
         })
         .returning();
       res.json(result[0]);
@@ -414,21 +486,42 @@ async function startServer() {
   app.put("/api/costs/:id", requireAuth, async (req: AuthRequest, res) => {
     try {
       const { id } = req.params;
-      const { cycleId, date, category, description, value } = req.body;
+      const { cycleId, date, category, description, value, paymentMethod, payer } = req.body;
       if (!cycleId || !date || !category || !description || value === undefined) {
         return res.status(400).json({ error: "Todos os campos são obrigatórios." });
       }
 
+      const costId = parseInt(id);
+      const parsedValue = parseFloat(value);
+      const cId = parseInt(cycleId);
+      
+      if (isNaN(costId)) {
+        return res.status(400).json({ error: "ID inválido." });
+      }
+      if (isNaN(parsedValue) || parsedValue < 0) {
+        return res.status(400).json({ error: "Valor inválido ou negativo." });
+      }
+      if (isNaN(cId)) {
+        return res.status(400).json({ error: "Ciclo inválido." });
+      }
+
       const dbUser = await getOrCreateUser(req.user!.uid, req.user!.email || "");
+
+      // Tenant Isolation: Verify cycle belongs to the user
+      const userCycle = await db.select().from(cycles).where(and(eq(cycles.id, cId), eq(cycles.userId, dbUser.id))).limit(1);
+      if (userCycle.length === 0) return res.status(403).json({ error: "Ciclo produtivo não encontrado ou sem permissão." });
+
       const result = await db.update(costs)
         .set({
-          cycleId: parseInt(cycleId),
+          cycleId: cId,
           date,
           category,
           description,
-          value: parseFloat(value),
+          value: parsedValue,
+          paymentMethod: paymentMethod || null,
+          payer: payer || null,
         })
-        .where(and(eq(costs.id, parseInt(id)), eq(costs.userId, dbUser.id)))
+        .where(and(eq(costs.id, costId), eq(costs.userId, dbUser.id)))
         .returning();
 
       if (result.length === 0) {
@@ -569,15 +662,33 @@ async function startServer() {
         return res.status(400).json({ error: "Todos os campos do registro de colheita são obrigatórios." });
       }
 
+      const parsedQty = parseFloat(quantity);
+      const parsedPrice = parseFloat(pricePerUnit);
+      const cId = parseInt(cycleId);
+
+      if (isNaN(parsedQty) || parsedQty < 0) {
+        return res.status(400).json({ error: "Quantidade inválida ou negativa." });
+      }
+      if (isNaN(parsedPrice) || parsedPrice < 0) {
+        return res.status(400).json({ error: "Preço inválido ou negativo." });
+      }
+      if (isNaN(cId)) {
+        return res.status(400).json({ error: "Ciclo inválido." });
+      }
+
       const dbUser = await getOrCreateUser(req.user!.uid, req.user!.email || "");
+
+      const userCycle = await db.select().from(cycles).where(and(eq(cycles.id, cId), eq(cycles.userId, dbUser.id))).limit(1);
+      if (userCycle.length === 0) return res.status(403).json({ error: "Ciclo produtivo não encontrado ou sem permissão." });
+
       const result = await db.insert(harvests)
         .values({
           userId: dbUser.id,
-          cycleId: parseInt(cycleId),
+          cycleId: cId,
           date,
-          quantity: parseFloat(quantity),
+          quantity: parsedQty,
           unit,
-          pricePerUnit: parseFloat(pricePerUnit),
+          pricePerUnit: parsedPrice,
         })
         .returning();
       res.json(result[0]);
@@ -595,16 +706,30 @@ async function startServer() {
         return res.status(400).json({ error: "Todos os campos são obrigatórios." });
       }
 
+      const harvestId = parseInt(id);
+      const parsedQty = parseFloat(quantity);
+      const parsedPrice = parseFloat(pricePerUnit);
+      const cId = parseInt(cycleId);
+
+      if (isNaN(harvestId)) return res.status(400).json({ error: "ID inválido." });
+      if (isNaN(parsedQty) || parsedQty < 0) return res.status(400).json({ error: "Quantidade inválida ou negativa." });
+      if (isNaN(parsedPrice) || parsedPrice < 0) return res.status(400).json({ error: "Preço inválido ou negativo." });
+      if (isNaN(cId)) return res.status(400).json({ error: "Ciclo inválido." });
+
       const dbUser = await getOrCreateUser(req.user!.uid, req.user!.email || "");
+
+      const userCycle = await db.select().from(cycles).where(and(eq(cycles.id, cId), eq(cycles.userId, dbUser.id))).limit(1);
+      if (userCycle.length === 0) return res.status(403).json({ error: "Ciclo produtivo não encontrado ou sem permissão." });
+
       const result = await db.update(harvests)
         .set({
-          cycleId: parseInt(cycleId),
+          cycleId: cId,
           date,
-          quantity: parseFloat(quantity),
+          quantity: parsedQty,
           unit,
-          pricePerUnit: parseFloat(pricePerUnit),
+          pricePerUnit: parsedPrice,
         })
-        .where(and(eq(harvests.id, parseInt(id)), eq(harvests.userId, dbUser.id)))
+        .where(and(eq(harvests.id, harvestId), eq(harvests.userId, dbUser.id)))
         .returning();
 
       if (result.length === 0) {
@@ -620,9 +745,12 @@ async function startServer() {
   app.delete("/api/harvests/:id", requireAuth, async (req: AuthRequest, res) => {
     try {
       const { id } = req.params;
+      const harvestId = parseInt(id);
+      if (isNaN(harvestId)) return res.status(400).json({ error: "ID inválido." });
+
       const dbUser = await getOrCreateUser(req.user!.uid, req.user!.email || "");
       const result = await db.delete(harvests)
-        .where(and(eq(harvests.id, parseInt(id)), eq(harvests.userId, dbUser.id)))
+        .where(and(eq(harvests.id, harvestId), eq(harvests.userId, dbUser.id)))
         .returning();
 
       if (result.length === 0) {
@@ -657,16 +785,24 @@ async function startServer() {
         return res.status(400).json({ error: "Nome, categoria e unidade são obrigatórios." });
       }
 
+      const parsedQty = quantity !== undefined ? parseFloat(quantity) : 0;
+      const parsedMinQty = minQuantity !== undefined ? parseFloat(minQuantity) : 0;
+      const parsedUnitCost = unitCost !== undefined ? parseFloat(unitCost) : 0;
+
+      if (isNaN(parsedQty) || parsedQty < 0 || isNaN(parsedMinQty) || parsedMinQty < 0 || isNaN(parsedUnitCost) || parsedUnitCost < 0) {
+        return res.status(400).json({ error: "Valores numéricos inválidos ou negativos." });
+      }
+
       const dbUser = await getOrCreateUser(req.user!.uid, req.user!.email || "");
       const result = await db.insert(inventoryItems)
         .values({
           userId: dbUser.id,
           name,
           category,
-          quantity: quantity !== undefined ? parseFloat(quantity) : 0,
+          quantity: parsedQty,
           unit,
-          minQuantity: minQuantity !== undefined ? parseFloat(minQuantity) : 0,
-          unitCost: unitCost !== undefined ? parseFloat(unitCost) : 0,
+          minQuantity: parsedMinQty,
+          unitCost: parsedUnitCost,
           location: location || null,
         })
         .returning();
@@ -685,18 +821,29 @@ async function startServer() {
         return res.status(400).json({ error: "Nome, categoria e unidade são obrigatórios." });
       }
 
+      const itemId = parseInt(id);
+      if (isNaN(itemId)) return res.status(400).json({ error: "ID inválido." });
+
+      const parsedQty = quantity !== undefined ? parseFloat(quantity) : 0;
+      const parsedMinQty = minQuantity !== undefined ? parseFloat(minQuantity) : 0;
+      const parsedUnitCost = unitCost !== undefined ? parseFloat(unitCost) : 0;
+
+      if (isNaN(parsedQty) || parsedQty < 0 || isNaN(parsedMinQty) || parsedMinQty < 0 || isNaN(parsedUnitCost) || parsedUnitCost < 0) {
+        return res.status(400).json({ error: "Valores numéricos inválidos ou negativos." });
+      }
+
       const dbUser = await getOrCreateUser(req.user!.uid, req.user!.email || "");
       const result = await db.update(inventoryItems)
         .set({
           name,
           category,
-          quantity: quantity !== undefined ? parseFloat(quantity) : 0,
+          quantity: parsedQty,
           unit,
-          minQuantity: minQuantity !== undefined ? parseFloat(minQuantity) : 0,
-          unitCost: unitCost !== undefined ? parseFloat(unitCost) : 0,
+          minQuantity: parsedMinQty,
+          unitCost: parsedUnitCost,
           location: location || null,
         })
-        .where(and(eq(inventoryItems.id, parseInt(id)), eq(inventoryItems.userId, dbUser.id)))
+        .where(and(eq(inventoryItems.id, itemId), eq(inventoryItems.userId, dbUser.id)))
         .returning();
 
       if (result.length === 0) {
@@ -712,8 +859,10 @@ async function startServer() {
   app.delete("/api/inventory/:id", requireAuth, async (req: AuthRequest, res) => {
     try {
       const { id } = req.params;
-      const dbUser = await getOrCreateUser(req.user!.uid, req.user!.email || "");
       const itemId = parseInt(id);
+      if (isNaN(itemId)) return res.status(400).json({ error: "ID inválido." });
+
+      const dbUser = await getOrCreateUser(req.user!.uid, req.user!.email || "");
 
       // 1. Find all movements linked to this item
       const itemMovements = await db.select({ id: inventoryMovements.id })
@@ -788,11 +937,21 @@ async function startServer() {
       }
 
       const parsedQty = parseFloat(quantity);
-      if (parsedQty <= 0) {
+      if (isNaN(parsedQty) || parsedQty <= 0) {
         return res.status(400).json({ error: "A quantidade deve ser maior que zero." });
       }
 
       const dbUser = await getOrCreateUser(req.user!.uid, req.user!.email || "");
+
+      let cId: number | null = null;
+      if (cycleId) {
+        cId = parseInt(cycleId);
+        if (isNaN(cId)) {
+          return res.status(400).json({ error: "Ciclo inválido." });
+        }
+        const userCycle = await db.select().from(cycles).where(and(eq(cycles.id, cId), eq(cycles.userId, dbUser.id))).limit(1);
+        if (userCycle.length === 0) return res.status(403).json({ error: "Ciclo produtivo não encontrado ou sem permissão." });
+      }
 
       // Get current item to check stock availability and update it
       const currentItem = await db.select()
@@ -830,7 +989,7 @@ async function startServer() {
           quantity: parsedQty,
           date,
           description: description || null,
-          cycleId: cycleId ? parseInt(cycleId) : null,
+          cycleId: cId,
         })
         .returning();
 
@@ -926,6 +1085,51 @@ async function startServer() {
     } catch (error: any) {
       console.error("Error deleting movement:", error);
       res.status(500).json({ error: "Erro ao estornar movimentação de estoque." });
+    }
+  });
+
+
+  // 9. Export All Data
+  app.get("/api/export", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const dbUser = await getOrCreateUser(req.user!.uid, req.user!.email || "");
+
+      const [
+        userProperties,
+        userActivities,
+        userPlots,
+        userCycles,
+        userCosts,
+        userHarvests,
+        userInventoryItems,
+        userInventoryMovements
+      ] = await Promise.all([
+        db.select().from(properties).where(eq(properties.userId, dbUser.id)),
+        db.select().from(activities).where(eq(activities.userId, dbUser.id)),
+        db.select().from(plots).where(eq(plots.userId, dbUser.id)),
+        db.select().from(cycles).where(eq(cycles.userId, dbUser.id)),
+        db.select().from(costs).where(eq(costs.userId, dbUser.id)),
+        db.select().from(harvests).where(eq(harvests.userId, dbUser.id)),
+        db.select().from(inventoryItems).where(eq(inventoryItems.userId, dbUser.id)),
+        db.select().from(inventoryMovements).where(eq(inventoryMovements.userId, dbUser.id)),
+      ]);
+
+      const exportData = {
+        properties: userProperties,
+        activities: userActivities,
+        plots: userPlots,
+        cycles: userCycles,
+        costs: userCosts,
+        harvests: userHarvests,
+        inventoryItems: userInventoryItems,
+        inventoryMovements: userInventoryMovements,
+        exportedAt: new Date().toISOString()
+      };
+
+      res.json(exportData);
+    } catch (error: any) {
+      console.error("Error exporting data:", error);
+      res.status(500).json({ error: "Erro ao exportar dados." });
     }
   });
 
