@@ -229,7 +229,39 @@ function Dashboard() {
 }
 
 function LoginScreen() {
-  const { login, loading } = useAuth();
+  const { login, loginWithEmail, registerWithEmail, loading } = useAuth();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [isRegistering, setIsRegistering] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
+
+  const handleEmailAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMsg('');
+    if (!email || !password) {
+      setErrorMsg('Preencha email e senha.');
+      return;
+    }
+    try {
+      if (isRegistering) {
+        await registerWithEmail(email, password);
+      } else {
+        await loginWithEmail(email, password);
+      }
+    } catch (err: any) {
+      if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
+        setErrorMsg('Email ou senha incorretos.');
+      } else if (err.code === 'auth/email-already-in-use') {
+        setErrorMsg('Este email já está em uso.');
+      } else if (err.code === 'auth/weak-password') {
+        setErrorMsg('A senha deve ter pelo menos 6 caracteres.');
+      } else if (err.code === 'auth/invalid-email') {
+        setErrorMsg('Email inválido.');
+      } else {
+        setErrorMsg('Ocorreu um erro na autenticação.');
+      }
+    }
+  };
 
   return (
     <div className="min-h-screen bg-[#3a4d39] flex items-center justify-center p-6 relative overflow-hidden font-sans">
@@ -241,7 +273,7 @@ function LoginScreen() {
         initial={{ opacity: 0, y: 15 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4 }}
-        className="w-full max-w-md bg-[#fdfbf7] border border-[#d2c49a] p-8 rounded-3xl shadow-xl relative z-10 space-y-8"
+        className="w-full max-w-md bg-[#fdfbf7] border border-[#d2c49a] p-8 rounded-3xl shadow-xl relative z-10 space-y-6"
       >
         <div className="text-center space-y-3">
           <div className="inline-flex bg-[#ece3ce] text-[#3a4d39] p-4 rounded-2xl border border-[#d2c49a] shadow-inner">
@@ -269,32 +301,85 @@ function LoginScreen() {
               <p className="text-xs text-stone-600 font-medium">Autenticando sessão...</p>
             </div>
           ) : (
-            <button
-              id="google-signin-btn"
-              onClick={login}
-              className="w-full py-3.5 px-5 bg-white hover:bg-stone-50 text-stone-800 font-semibold text-sm rounded-2xl shadow-sm hover:shadow-md transition-all duration-200 cursor-pointer flex items-center justify-center gap-3 border border-stone-200"
-            >
-              {/* Google SVG G logo */}
-              <svg className="w-5 h-5 flex-shrink-0" viewBox="0 0 24 24">
-                <path
-                  fill="#EA4335"
-                  d="M12 5.04c1.62 0 3.08.56 4.22 1.65l3.15-3.15C17.45 1.68 14.93 1 12 1 7.37 1 3.4 3.66 1.48 7.56l3.75 2.91C6.11 7.07 8.84 5.04 12 5.04z"
+            <>
+              {errorMsg && (
+                <div className="bg-red-50 text-red-600 text-xs p-3 rounded-xl border border-red-100 text-center font-medium">
+                  {errorMsg}
+                </div>
+              )}
+              <form onSubmit={handleEmailAuth} className="space-y-3">
+                <input 
+                  type="email" 
+                  placeholder="Seu email" 
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full bg-white border border-stone-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#3a4d39] transition-all"
+                  required
                 />
-                <path
-                  fill="#4285F4"
-                  d="M23.49 12.27c0-.81-.07-1.59-.2-2.36H12v4.51h6.46c-.28 1.48-1.12 2.73-2.38 3.58l3.71 2.88c2.17-2 3.7-4.96 3.7-8.61z"
+                <input 
+                  type="password" 
+                  placeholder="Sua senha" 
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full bg-white border border-stone-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#3a4d39] transition-all"
+                  required
                 />
-                <path
-                  fill="#FBBC05"
-                  d="M5.23 14.75a7.16 7.16 0 010-4.51L1.48 7.33a11.96 11.96 0 000 9.33l3.75-2.91z"
-                />
-                <path
-                  fill="#34A853"
-                  d="M12 23c3.24 0 5.97-1.07 7.96-2.91l-3.71-2.88c-1.03.69-2.35 1.1-4.25 1.1-3.16 0-5.89-2.03-6.77-5.43L1.48 15.8c1.92 3.9 5.89 6.56 10.52 6.56z"
-                />
-              </svg>
-              Entrar com o Google
-            </button>
+                <button
+                  type="submit"
+                  className="w-full py-3.5 px-5 bg-[#3a4d39] hover:bg-[#2c3a2b] text-white font-semibold text-sm rounded-2xl shadow-sm transition-all cursor-pointer flex items-center justify-center"
+                >
+                  {isRegistering ? 'Criar Conta' : 'Entrar com Email'}
+                </button>
+              </form>
+              
+              <div className="flex items-center justify-between text-xs text-stone-500 font-medium px-2">
+                <span>{isRegistering ? 'Já tem uma conta?' : 'Não tem uma conta?'}</span>
+                <button 
+                  type="button" 
+                  onClick={() => { setIsRegistering(!isRegistering); setErrorMsg(''); }}
+                  className="text-[#3a4d39] font-bold hover:underline"
+                >
+                  {isRegistering ? 'Fazer login' : 'Cadastre-se'}
+                </button>
+              </div>
+
+              <div className="relative py-2">
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-full border-t border-stone-200"></div>
+                </div>
+                <div className="relative flex justify-center text-xs">
+                  <span className="bg-[#fdfbf7] px-2 text-stone-400 font-medium">ou</span>
+                </div>
+              </div>
+
+              <button
+                id="google-signin-btn"
+                type="button"
+                onClick={login}
+                className="w-full py-3.5 px-5 bg-white hover:bg-stone-50 text-stone-800 font-semibold text-sm rounded-2xl shadow-sm hover:shadow-md transition-all duration-200 cursor-pointer flex items-center justify-center gap-3 border border-stone-200"
+              >
+                {/* Google SVG G logo */}
+                <svg className="w-5 h-5 flex-shrink-0" viewBox="0 0 24 24">
+                  <path
+                    fill="#EA4335"
+                    d="M12 5.04c1.62 0 3.08.56 4.22 1.65l3.15-3.15C17.45 1.68 14.93 1 12 1 7.37 1 3.4 3.66 1.48 7.56l3.75 2.91C6.11 7.07 8.84 5.04 12 5.04z"
+                  />
+                  <path
+                    fill="#4285F4"
+                    d="M23.49 12.27c0-.81-.07-1.59-.2-2.36H12v4.51h6.46c-.28 1.48-1.12 2.73-2.38 3.58l3.71 2.88c2.17-2 3.7-4.96 3.7-8.61z"
+                  />
+                  <path
+                    fill="#FBBC05"
+                    d="M5.23 14.75a7.16 7.16 0 010-4.51L1.48 7.33a11.96 11.96 0 000 9.33l3.75-2.91z"
+                  />
+                  <path
+                    fill="#34A853"
+                    d="M12 23c3.24 0 5.97-1.07 7.96-2.91l-3.71-2.88c-1.03.69-2.35 1.1-4.25 1.1-3.16 0-5.89-2.03-6.77-5.43L1.48 15.8c1.92 3.9 5.89 6.56 10.52 6.56z"
+                  />
+                </svg>
+                Entrar com o Google
+              </button>
+            </>
           )}
         </div>
 

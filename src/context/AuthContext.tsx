@@ -4,7 +4,9 @@ import {
   onAuthStateChanged, 
   signInWithPopup, 
   signOut, 
-  getIdToken 
+  getIdToken,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword
 } from 'firebase/auth';
 import { auth, googleAuthProvider } from '../lib/firebase.ts';
 
@@ -13,6 +15,8 @@ interface AuthContextType {
   token: string | null;
   loading: boolean;
   login: () => Promise<void>;
+  loginWithEmail: (email: string, pass: string) => Promise<void>;
+  registerWithEmail: (email: string, pass: string) => Promise<void>;
   logout: () => Promise<void>;
   fetchWithAuth: (url: string, options?: RequestInit) => Promise<Response>;
 }
@@ -58,6 +62,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       await signInWithPopup(auth, googleAuthProvider);
     } catch (error) {
       console.error("Error signing in with Google:", error);
+      setLoading(false);
+      throw error;
+    }
+  };
+
+  const loginWithEmail = async (email: string, pass: string) => {
+    try {
+      setLoading(true);
+      await signInWithEmailAndPassword(auth, email, pass);
+    } catch (error) {
+      console.error("Error signing in with Email:", error);
+      setLoading(false);
+      throw error;
+    }
+  };
+
+  const registerWithEmail = async (email: string, pass: string) => {
+    try {
+      setLoading(true);
+      await createUserWithEmailAndPassword(auth, email, pass);
+    } catch (error) {
+      console.error("Error registering with Email:", error);
       setLoading(false);
       throw error;
     }
@@ -118,7 +144,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ user, token, loading, login, logout, fetchWithAuth }}>
+    <AuthContext.Provider value={{ user, token, loading, login, loginWithEmail, registerWithEmail, logout, fetchWithAuth }}>
       {children}
     </AuthContext.Provider>
   );
