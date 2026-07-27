@@ -57,7 +57,7 @@ export const PropertySection: React.FC<PropertySectionProps> = ({ onPropertyChan
       return;
     }
 
-    const areaNum = parseFloat(totalArea);
+    const areaNum = parseFloat(String(totalArea).replace(",", "."));
     if (isNaN(areaNum) || areaNum <= 0) {
       setError('Área Total deve ser um número maior que zero.');
       return;

@@ -144,9 +144,9 @@ export const InventorySection: React.FC<InventorySectionProps> = ({ onRefresh })
       return;
     }
 
-    const qty = parseFloat(itemQuantity);
-    const minQty = parseFloat(itemMinQuantity);
-    const cost = parseFloat(itemUnitCost);
+    const qty = parseFloat(String(itemQuantity).replace(",", "."));
+    const minQty = parseFloat(String(itemMinQuantity).replace(",", "."));
+    const cost = parseFloat(String(itemUnitCost).replace(",", "."));
 
     if (isNaN(qty) || qty < 0 || isNaN(minQty) || minQty < 0 || isNaN(cost) || cost < 0) {
       setError('Quantidade, quantidade mínima e custo unitário devem ser números válidos maiores ou iguais a zero.');
@@ -200,7 +200,7 @@ export const InventorySection: React.FC<InventorySectionProps> = ({ onRefresh })
 
     if (!movementItem) return;
 
-    const qty = parseFloat(movQuantity);
+    const qty = parseFloat(String(movQuantity).replace(",", "."));
     if (isNaN(qty) || qty <= 0) {
       setError('A quantidade de movimentação deve ser maior que zero.');
       return;
@@ -882,7 +882,7 @@ export const InventorySection: React.FC<InventorySectionProps> = ({ onRefresh })
                         Esta saída de estoque criará automaticamente um registro correspondente de custo no ciclo selecionado.
                       </p>
                       <p className="font-mono">
-                        Custo Estimado: R$ {(parseFloat(movQuantity || '0') * movementItem.unitCost).toFixed(2)}
+                        Custo Estimado: R$ {(parseFloat(String(movQuantity || '0').replace(",", ".")) * movementItem.unitCost).toFixed(2)}
                       </p>
                     </div>
                   )}

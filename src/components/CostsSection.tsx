@@ -86,7 +86,7 @@ export const CostsSection: React.FC<CostsSectionProps> = ({ onRefresh }) => {
       return;
     }
 
-    const costValue = parseFloat(value);
+    const costValue = parseFloat(String(value).replace(",", "."));
     if (isNaN(costValue) || costValue <= 0) {
       setError('O valor do custo deve ser um número maior que zero.');
       return;

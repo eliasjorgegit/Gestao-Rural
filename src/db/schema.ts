@@ -4,8 +4,9 @@ import { doublePrecision, integer, pgTable, serial, text, timestamp } from 'driz
 // 1. Users Table
 export const users = pgTable('users', {
   id: serial('id').primaryKey(),
-  uid: text('uid').notNull().unique(), // Firebase Auth UID
+  uid: text('uid').notNull().unique(), // Firebase Auth UID or local UID
   email: text('email').notNull(),
+  passwordHash: text('password_hash'),
   createdAt: timestamp('created_at').defaultNow(),
 });
 
@@ -114,6 +115,8 @@ export const costs = pgTable('costs', {
   payer: text('payer'), // Name of the person who paid
   inventoryMovementId: integer('inventory_movement_id')
     .references(() => inventoryMovements.id, { onDelete: 'set null' }),
+  transactionId: integer('transaction_id')
+    .references(() => transactions.id, { onDelete: 'set null' }),
   createdAt: timestamp('created_at').defaultNow(),
 });
 
@@ -130,6 +133,26 @@ export const harvests = pgTable('harvests', {
   quantity: doublePrecision('quantity').notNull(), // sacas, kg, toneladas, arrobas, etc.
   unit: text('unit').notNull(), // e.g. sacas, kg, toneladas, arrobas
   pricePerUnit: doublePrecision('price_per_unit').notNull(), // R$ médio de venda unitário
+  transactionId: integer('transaction_id')
+    .references(() => transactions.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+// 10. Financial Transactions (Contas a Pagar e Receber)
+export const transactions = pgTable('transactions', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id')
+    .references(() => users.id, { onDelete: 'cascade' })
+    .notNull(),
+  type: text('type').notNull(), // 'payable' (A Pagar) | 'receivable' (A Receber)
+  description: text('description').notNull(),
+  amount: doublePrecision('amount').notNull(),
+  dueDate: text('due_date').notNull(), // YYYY-MM-DD
+  paymentDate: text('payment_date'), // YYYY-MM-DD
+  status: text('status').notNull().default('pending'), // 'pending' | 'paid'
+  category: text('category'), // e.g., 'Insumos', 'Venda de Safra', 'Mão de obra'
+  cycleId: integer('cycle_id')
+    .references(() => cycles.id, { onDelete: 'set null' }), // Optional linkage to a cycle
   createdAt: timestamp('created_at').defaultNow(),
 });
 
@@ -144,6 +167,7 @@ export const usersRelations = relations(users, ({ many }) => ({
   harvests: many(harvests),
   inventoryItems: many(inventoryItems),
   inventoryMovements: many(inventoryMovements),
+  transactions: many(transactions),
 }));
 
 export const propertiesRelations = relations(properties, ({ one }) => ({
@@ -185,6 +209,7 @@ export const cyclesRelations = relations(cycles, ({ one, many }) => ({
   costs: many(costs),
   harvests: many(harvests),
   inventoryMovements: many(inventoryMovements),
+  transactions: many(transactions),
 }));
 
 export const costsRelations = relations(costs, ({ one }) => ({
@@ -229,6 +254,17 @@ export const inventoryMovementsRelations = relations(inventoryMovements, ({ one 
   }),
   cycle: one(cycles, {
     fields: [inventoryMovements.cycleId],
+    references: [cycles.id],
+  }),
+}));
+
+export const transactionsRelations = relations(transactions, ({ one }) => ({
+  user: one(users, {
+    fields: [transactions.userId],
+    references: [users.id],
+  }),
+  cycle: one(cycles, {
+    fields: [transactions.cycleId],
     references: [cycles.id],
   }),
 }));

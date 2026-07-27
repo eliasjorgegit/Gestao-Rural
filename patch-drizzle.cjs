@@ -1,4 +1,7 @@
-import { defineConfig } from "drizzle-kit";
+const fs = require('fs');
+let code = fs.readFileSync('src/db/drizzle.config.ts', 'utf8');
+
+const newCode = `import { defineConfig } from "drizzle-kit";
 import * as dotenv from "dotenv";
 
 // Load environment variables from .env file.
@@ -36,3 +39,6 @@ export default defineConfig({
   dbCredentials,
   verbose: true, // Enable verbose output.
 });
+`;
+
+fs.writeFileSync('src/db/drizzle.config.ts', newCode);

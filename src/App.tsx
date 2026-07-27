@@ -8,6 +8,7 @@ import { CostsSection } from './components/CostsSection.tsx';
 import { HarvestsSection } from './components/HarvestsSection.tsx';
 import { ReportsSection } from './components/ReportsSection.tsx';
 import { InventorySection } from './components/InventorySection.tsx';
+import { TransactionsSection } from './components/TransactionsSection.tsx';
 import { 
   Sprout, 
   Landmark, 
@@ -20,13 +21,14 @@ import {
   User as UserIcon,
   ChevronRight,
   Sparkles,
-  Package
+  Package,
+  Wallet
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 function Dashboard() {
   const { user, logout } = useAuth();
-  const [activeTab, setActiveTab] = useState<'basics' | 'cycles' | 'costs' | 'harvests' | 'reports' | 'inventory'>('basics');
+  const [activeTab, setActiveTab] = useState<'basics' | 'cycles' | 'inventory' | 'costs' | 'transactions' | 'harvests' | 'reports'>('basics');
   
   // State to trigger reactive updates in dependent components
   const [refreshTrigger, setRefreshTrigger] = useState(0);
@@ -40,6 +42,7 @@ function Dashboard() {
     { id: 'cycles', name: 'Ciclos Produtivos', desc: 'Planejar Safras e Lotes', icon: CalendarDays },
     { id: 'inventory', name: 'Estoque de Insumos', desc: 'Sementes, Adubos e Ferramentas', icon: Package },
     { id: 'costs', name: 'Lançamento de Custos', desc: 'Despesas e Insumos', icon: DollarSign },
+    { id: 'transactions', name: 'Financeiro', desc: 'Contas a Pagar e Receber', icon: Wallet },
     { id: 'harvests', name: 'Produção / Colheita', desc: 'Coletas e Vendas', icon: ShoppingBag },
     { id: 'reports', name: 'Relatórios & Análise', desc: 'Análise de Resultados', icon: BarChart3 },
   ] as const;
@@ -194,7 +197,14 @@ function Dashboard() {
                 </div>
               )}
 
-              {/* 4. PRODUÇÃO / COLHEITA */}
+              {/* 4. FINANCEIRO (CONTAS A PAGAR E RECEBER) */}
+              {activeTab === 'transactions' && (
+                <div className="space-y-6">
+                  <TransactionsSection />
+                </div>
+              )}
+
+              {/* 5. PRODUÇÃO / COLHEITA */}
               {activeTab === 'harvests' && (
                 <div className="space-y-6">
                   <div className="flex items-center gap-2 print:hidden">
@@ -239,7 +249,7 @@ function LoginScreen() {
     e.preventDefault();
     setErrorMsg('');
     if (!email || !password) {
-      setErrorMsg('Preencha email e senha.');
+      setErrorMsg('Preencha e-mail e senha.');
       return;
     }
     try {
@@ -249,17 +259,7 @@ function LoginScreen() {
         await loginWithEmail(email, password);
       }
     } catch (err: any) {
-      if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
-        setErrorMsg('Email ou senha incorretos.');
-      } else if (err.code === 'auth/email-already-in-use') {
-        setErrorMsg('Este email já está em uso.');
-      } else if (err.code === 'auth/weak-password') {
-        setErrorMsg('A senha deve ter pelo menos 6 caracteres.');
-      } else if (err.code === 'auth/invalid-email') {
-        setErrorMsg('Email inválido.');
-      } else {
-        setErrorMsg('Ocorreu um erro na autenticação.');
-      }
+      setErrorMsg(err.message || 'Ocorreu um erro na autenticação.');
     }
   };
 

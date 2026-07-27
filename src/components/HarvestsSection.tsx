@@ -80,8 +80,8 @@ export const HarvestsSection: React.FC<HarvestsSectionProps> = ({ onRefresh }) =
       return;
     }
 
-    const qtyNum = parseFloat(quantity);
-    const priceNum = parseFloat(pricePerUnit);
+    const qtyNum = parseFloat(String(quantity).replace(",", "."));
+    const priceNum = parseFloat(String(pricePerUnit).replace(",", "."));
 
     if (isNaN(qtyNum) || qtyNum <= 0) {
       setError('A quantidade deve ser um número maior que zero.');
@@ -163,7 +163,7 @@ export const HarvestsSection: React.FC<HarvestsSectionProps> = ({ onRefresh }) =
 
   return (
     <div className="bg-white rounded-2xl border border-stone-200 shadow-xs overflow-hidden">
-      <div className="p-6 bg-[#3a4d39] text-white flex justify-between items-center">
+      <div className="p-6 bg-stone-900 text-white flex justify-between items-center">
         <div className="flex items-center gap-3">
           <ShoppingBag className="w-6 h-6 text-amber-200" />
           <div>
@@ -216,7 +216,7 @@ export const HarvestsSection: React.FC<HarvestsSectionProps> = ({ onRefresh }) =
                       id="harvest-cycle-select"
                       value={cycleId}
                       onChange={(e) => setCycleId(e.target.value)}
-                      className="w-full px-4 py-2.5 rounded-xl border border-stone-200 focus:outline-hidden focus:border-[#3a4d39] text-sm font-sans bg-white"
+                      className="w-full px-4 py-2.5 rounded-xl border border-stone-200 focus:outline-hidden focus:border-stone-900 text-sm font-sans bg-white"
                       required
                     >
                       <option value="">-- Escolher Ciclo --</option>
@@ -237,7 +237,7 @@ export const HarvestsSection: React.FC<HarvestsSectionProps> = ({ onRefresh }) =
                       type="date"
                       value={date}
                       onChange={(e) => setDate(e.target.value)}
-                      className="w-full px-4 py-2.5 rounded-xl border border-stone-200 focus:outline-hidden focus:border-[#3a4d39] text-sm font-sans bg-white"
+                      className="w-full px-4 py-2.5 rounded-xl border border-stone-200 focus:outline-hidden focus:border-stone-900 text-sm font-sans bg-white"
                       required
                     />
                   </div>
@@ -250,7 +250,7 @@ export const HarvestsSection: React.FC<HarvestsSectionProps> = ({ onRefresh }) =
                       id="harvest-unit-select"
                       value={unit}
                       onChange={(e) => setUnit(e.target.value)}
-                      className="w-full px-4 py-2.5 rounded-xl border border-stone-200 focus:outline-hidden focus:border-[#3a4d39] text-sm font-sans bg-white"
+                      className="w-full px-4 py-2.5 rounded-xl border border-stone-200 focus:outline-hidden focus:border-stone-900 text-sm font-sans bg-white"
                       required
                     >
                       <option value="">-- Escolher Unidade --</option>
@@ -273,7 +273,7 @@ export const HarvestsSection: React.FC<HarvestsSectionProps> = ({ onRefresh }) =
                       placeholder="Ex: 150"
                       value={quantity}
                       onChange={(e) => setQuantity(e.target.value)}
-                      className="w-full px-4 py-2.5 rounded-xl border border-stone-200 focus:outline-hidden focus:border-[#3a4d39] text-sm font-sans bg-white"
+                      className="w-full px-4 py-2.5 rounded-xl border border-stone-200 focus:outline-hidden focus:border-stone-900 text-sm font-sans bg-white"
                       required
                     />
                   </div>
@@ -289,7 +289,7 @@ export const HarvestsSection: React.FC<HarvestsSectionProps> = ({ onRefresh }) =
                       placeholder="Ex: 820.00"
                       value={pricePerUnit}
                       onChange={(e) => setPricePerUnit(e.target.value)}
-                      className="w-full px-4 py-2.5 rounded-xl border border-stone-200 focus:outline-hidden focus:border-[#3a4d39] text-sm font-sans bg-white"
+                      className="w-full px-4 py-2.5 rounded-xl border border-stone-200 focus:outline-hidden focus:border-stone-900 text-sm font-sans bg-white"
                       required
                     />
                   </div>
@@ -307,7 +307,7 @@ export const HarvestsSection: React.FC<HarvestsSectionProps> = ({ onRefresh }) =
                   <button
                     id="submit-harvest-form"
                     type="submit"
-                    className="flex items-center gap-1.5 bg-[#3a4d39] hover:bg-[#4f6b4e] text-white px-5 py-2 text-sm font-medium rounded-xl shadow-xs transition-all cursor-pointer"
+                    className="flex items-center gap-1.5 bg-stone-900 hover:bg-[#4f6b4e] text-white px-5 py-2 text-sm font-medium rounded-xl shadow-xs transition-all cursor-pointer"
                   >
                     <Save className="w-4 h-4" />
                     Salvar Registro
@@ -318,7 +318,7 @@ export const HarvestsSection: React.FC<HarvestsSectionProps> = ({ onRefresh }) =
 
             {loading ? (
               <div className="flex justify-center items-center h-24">
-                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-[#3a4d39]"></div>
+                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-stone-900"></div>
               </div>
             ) : harvests.length === 0 ? (
               <div className="text-center py-10 text-stone-400 border border-dashed border-stone-200 rounded-2xl bg-stone-50/50">
@@ -357,7 +357,7 @@ export const HarvestsSection: React.FC<HarvestsSectionProps> = ({ onRefresh }) =
                         <td className="py-3.5 px-4 text-right font-mono text-stone-600">
                           {h.pricePerUnit.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} / {h.unit.replace(/s$/, '')}
                         </td>
-                        <td className="py-3.5 px-4 text-right font-mono font-bold text-[#3a4d39]">
+                        <td className="py-3.5 px-4 text-right font-mono font-bold text-stone-900">
                           {(h.quantity * h.pricePerUnit).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                         </td>
                         <td className="py-3.5 px-4 text-center">
@@ -365,7 +365,7 @@ export const HarvestsSection: React.FC<HarvestsSectionProps> = ({ onRefresh }) =
                             <button
                               id={`edit-harvest-btn-${h.id}`}
                               onClick={() => handleEditClick(h)}
-                              className="p-1.5 text-stone-400 hover:text-[#3a4d39] hover:bg-[#ece3ce]/60 rounded-lg transition-colors cursor-pointer"
+                              className="p-1.5 text-stone-400 hover:text-stone-900 hover:bg-[#ece3ce]/60 rounded-lg transition-colors cursor-pointer"
                               title="Editar"
                             >
                               <Edit2 className="w-4 h-4" />

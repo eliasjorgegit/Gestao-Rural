@@ -68,7 +68,7 @@ export const PlotsSection: React.FC<PlotsSectionProps> = ({ onRefresh }) => {
       return;
     }
 
-    const sizeNum = parseFloat(size);
+    const sizeNum = parseFloat(String(size).replace(",", "."));
     if (isNaN(sizeNum) || sizeNum <= 0) {
       setError('O tamanho do talhão deve ser um número maior que zero.');
       return;

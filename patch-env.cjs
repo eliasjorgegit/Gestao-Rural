@@ -1,4 +1,6 @@
-# Configurações do Banco de Dados PostgreSQL
+const fs = require('fs');
+
+const envExample = `# Configurações do Banco de Dados PostgreSQL
 # Se você tiver a URL de conexão direta completa, use DATABASE_URL.
 # Exemplo: postgresql://usuario:senha@localhost:5432/gestao_rural
 DATABASE_URL="postgresql://postgres:postgres@localhost:5432/gestao_rural"
@@ -18,3 +20,6 @@ APP_URL="http://localhost:3000"
 
 # GEMINI_API_KEY: Requerido para integrações com Gemini AI (se aplicável).
 GEMINI_API_KEY=""
+`;
+
+fs.writeFileSync('.env.example', envExample);

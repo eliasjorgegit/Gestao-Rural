@@ -1,4 +1,7 @@
-import { drizzle } from 'drizzle-orm/node-postgres';
+const fs = require('fs');
+let code = fs.readFileSync('src/db/index.ts', 'utf8');
+
+const newCode = `import { drizzle } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
 import * as schema from './schema.ts';
 import * as dotenv from 'dotenv';
@@ -32,3 +35,6 @@ pool.on('error', (err) => {
 
 // Initialize Drizzle with the pool and schema.
 export const db = drizzle(pool, { schema });
+`;
+
+fs.writeFileSync('src/db/index.ts', newCode);

@@ -1,10 +1,12 @@
 import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
-import { requireAuth, AuthRequest } from "./src/middleware/auth.ts";
+import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
+import { requireAuth, AuthRequest, JWT_SECRET } from "./src/middleware/auth.ts";
 import { getOrCreateUser } from "./src/db/users.ts";
 import { db } from "./src/db/index.ts";
-import { properties, activities, plots, cycles, costs, harvests, inventoryItems, inventoryMovements } from "./src/db/schema.ts";
+import { users, properties, activities, plots, cycles, costs, harvests, inventoryItems, inventoryMovements, transactions } from "./src/db/schema.ts";
 import { eq, and, desc } from "drizzle-orm";
 
 async function startServer() {
@@ -19,6 +21,95 @@ async function startServer() {
   // Health check endpoint
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok" });
+  });
+
+  // Native Registration endpoint (Email / Password)
+  app.post("/api/auth/register", async (req, res) => {
+    try {
+      const { email, password } = req.body;
+      if (!email || !password) {
+        return res.status(400).json({ error: "E-mail e senha são obrigatórios." });
+      }
+      if (password.length < 6) {
+        return res.status(400).json({ error: "A senha deve ter pelo menos 6 caracteres." });
+      }
+
+      const normalizedEmail = email.toLowerCase().trim();
+
+      // Check if user already exists
+      const existingUser = await db.select().from(users).where(eq(users.email, normalizedEmail)).limit(1);
+      if (existingUser.length > 0) {
+        // If user exists and already has a password or UID
+        if (existingUser[0].passwordHash) {
+          return res.status(400).json({ error: "Este e-mail já está cadastrado. Faça login." });
+        }
+        // If user was created via Google sync earlier, attach passwordHash to existing account
+        const hashedPassword = await bcrypt.hash(password, 10);
+        const updated = await db.update(users)
+          .set({ passwordHash: hashedPassword })
+          .where(eq(users.id, existingUser[0].id))
+          .returning();
+
+        const token = jwt.sign({ uid: updated[0].uid, email: updated[0].email }, JWT_SECRET, { expiresIn: '30d' });
+        return res.json({ status: "success", token, user: updated[0] });
+      }
+
+      const hashedPassword = await bcrypt.hash(password, 10);
+      const customUid = `local:${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+
+      const newUser = await db.insert(users)
+        .values({
+          uid: customUid,
+          email: normalizedEmail,
+          passwordHash: hashedPassword,
+        })
+        .returning();
+
+      const token = jwt.sign({ uid: newUser[0].uid, email: newUser[0].email }, JWT_SECRET, { expiresIn: '30d' });
+      res.json({ status: "success", token, user: newUser[0] });
+    } catch (error: any) {
+      console.error("Error registering user:", error);
+      res.status(500).json({ error: "Erro ao cadastrar usuário." });
+    }
+  });
+
+  // Native Login endpoint (Email / Password)
+  app.post("/api/auth/login", async (req, res) => {
+    try {
+      const { email, password } = req.body;
+      if (!email || !password) {
+        return res.status(400).json({ error: "E-mail e senha são obrigatórios." });
+      }
+
+      const normalizedEmail = email.toLowerCase().trim();
+      const userList = await db.select().from(users).where(eq(users.email, normalizedEmail)).limit(1);
+
+      if (userList.length === 0 || !userList[0].passwordHash) {
+        return res.status(400).json({ error: "E-mail ou senha incorretos." });
+      }
+
+      const userRecord = userList[0];
+      const isMatch = await bcrypt.compare(password, userRecord.passwordHash);
+      if (!isMatch) {
+        return res.status(400).json({ error: "E-mail ou senha incorretos." });
+      }
+
+      const token = jwt.sign({ uid: userRecord.uid, email: userRecord.email }, JWT_SECRET, { expiresIn: '30d' });
+      res.json({ status: "success", token, user: userRecord });
+    } catch (error: any) {
+      console.error("Error logging in:", error);
+      res.status(500).json({ error: "Erro ao realizar login." });
+    }
+  });
+
+  // Verify custom token endpoint
+  app.get("/api/auth/me", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const dbUser = await getOrCreateUser(req.user!.uid, req.user!.email || "");
+      res.json({ status: "success", user: dbUser });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
   });
 
   // User Profile synchronization endpoint
@@ -70,7 +161,7 @@ async function startServer() {
       let result;
       if (existing.length > 0) {
         result = await db.update(properties)
-          .set({ name, location, totalArea: parseFloat(totalArea) })
+          .set({ name, location, totalArea: parseFloat(String(totalArea).replace(",", ".")) })
           .where(eq(properties.id, existing[0].id))
           .returning();
       } else {
@@ -79,7 +170,7 @@ async function startServer() {
             userId: dbUser.id,
             name,
             location,
-            totalArea: parseFloat(totalArea)
+            totalArea: parseFloat(String(totalArea).replace(",", "."))
           })
           .returning();
       }
@@ -194,7 +285,7 @@ async function startServer() {
         return res.status(400).json({ error: "Nome, tamanho (hectares) e tipo de solo/relevo são obrigatórios." });
       }
 
-      const parsedSize = parseFloat(size);
+      const parsedSize = parseFloat(String(size).replace(",", "."));
       if (isNaN(parsedSize) || parsedSize <= 0) {
         return res.status(400).json({ error: "Tamanho inválido. Deve ser maior que zero." });
       }
@@ -228,7 +319,7 @@ async function startServer() {
         return res.status(400).json({ error: "ID inválido." });
       }
 
-      const parsedSize = parseFloat(size);
+      const parsedSize = parseFloat(String(size).replace(",", "."));
       if (isNaN(parsedSize) || parsedSize <= 0) {
         return res.status(400).json({ error: "Tamanho inválido. Deve ser maior que zero." });
       }
@@ -448,7 +539,7 @@ async function startServer() {
         return res.status(400).json({ error: "Todos os campos do custo são obrigatórios." });
       }
 
-      const parsedValue = parseFloat(value);
+      const parsedValue = parseFloat(String(value).replace(",", "."));
       const cId = parseInt(cycleId);
       
       if (isNaN(parsedValue) || parsedValue < 0) {
@@ -492,7 +583,7 @@ async function startServer() {
       }
 
       const costId = parseInt(id);
-      const parsedValue = parseFloat(value);
+      const parsedValue = parseFloat(String(value).replace(",", "."));
       const cId = parseInt(cycleId);
       
       if (isNaN(costId)) {
@@ -608,12 +699,12 @@ async function startServer() {
             const restoredQuantity = Number(item.quantity || 0) + Number(movementToReturn.quantity || 0);
             await db.update(inventoryItems)
               .set({ quantity: restoredQuantity })
-              .where(eq(inventoryItems.id, item.id));
+              .where(and(eq(inventoryItems.id, item.id), eq(inventoryItems.userId, dbUser.id)));
           }
 
           // Delete the associated inventory movement
           await db.delete(inventoryMovements)
-            .where(eq(inventoryMovements.id, movementToReturn.id));
+            .where(and(eq(inventoryMovements.id, movementToReturn.id), eq(inventoryMovements.userId, dbUser.id)));
         } catch (stockErr) {
           console.error("Error restoring stock quantity during cost deletion:", stockErr);
         }
@@ -662,8 +753,8 @@ async function startServer() {
         return res.status(400).json({ error: "Todos os campos do registro de colheita são obrigatórios." });
       }
 
-      const parsedQty = parseFloat(quantity);
-      const parsedPrice = parseFloat(pricePerUnit);
+      const parsedQty = parseFloat(String(quantity).replace(",", "."));
+      const parsedPrice = parseFloat(String(pricePerUnit).replace(",", "."));
       const cId = parseInt(cycleId);
 
       if (isNaN(parsedQty) || parsedQty < 0) {
@@ -707,8 +798,8 @@ async function startServer() {
       }
 
       const harvestId = parseInt(id);
-      const parsedQty = parseFloat(quantity);
-      const parsedPrice = parseFloat(pricePerUnit);
+      const parsedQty = parseFloat(String(quantity).replace(",", "."));
+      const parsedPrice = parseFloat(String(pricePerUnit).replace(",", "."));
       const cId = parseInt(cycleId);
 
       if (isNaN(harvestId)) return res.status(400).json({ error: "ID inválido." });
@@ -785,9 +876,9 @@ async function startServer() {
         return res.status(400).json({ error: "Nome, categoria e unidade são obrigatórios." });
       }
 
-      const parsedQty = quantity !== undefined ? parseFloat(quantity) : 0;
-      const parsedMinQty = minQuantity !== undefined ? parseFloat(minQuantity) : 0;
-      const parsedUnitCost = unitCost !== undefined ? parseFloat(unitCost) : 0;
+      const parsedQty = quantity !== undefined ? parseFloat(String(quantity).replace(",", ".")) : 0;
+      const parsedMinQty = minQuantity !== undefined ? parseFloat(String(minQuantity).replace(",", ".")) : 0;
+      const parsedUnitCost = unitCost !== undefined ? parseFloat(String(unitCost).replace(",", ".")) : 0;
 
       if (isNaN(parsedQty) || parsedQty < 0 || isNaN(parsedMinQty) || parsedMinQty < 0 || isNaN(parsedUnitCost) || parsedUnitCost < 0) {
         return res.status(400).json({ error: "Valores numéricos inválidos ou negativos." });
@@ -824,9 +915,9 @@ async function startServer() {
       const itemId = parseInt(id);
       if (isNaN(itemId)) return res.status(400).json({ error: "ID inválido." });
 
-      const parsedQty = quantity !== undefined ? parseFloat(quantity) : 0;
-      const parsedMinQty = minQuantity !== undefined ? parseFloat(minQuantity) : 0;
-      const parsedUnitCost = unitCost !== undefined ? parseFloat(unitCost) : 0;
+      const parsedQty = quantity !== undefined ? parseFloat(String(quantity).replace(",", ".")) : 0;
+      const parsedMinQty = minQuantity !== undefined ? parseFloat(String(minQuantity).replace(",", ".")) : 0;
+      const parsedUnitCost = unitCost !== undefined ? parseFloat(String(unitCost).replace(",", ".")) : 0;
 
       if (isNaN(parsedQty) || parsedQty < 0 || isNaN(parsedMinQty) || parsedMinQty < 0 || isNaN(parsedUnitCost) || parsedUnitCost < 0) {
         return res.status(400).json({ error: "Valores numéricos inválidos ou negativos." });
@@ -936,7 +1027,7 @@ async function startServer() {
         return res.status(400).json({ error: "Item, tipo, quantidade e data são obrigatórios." });
       }
 
-      const parsedQty = parseFloat(quantity);
+      const parsedQty = parseFloat(String(quantity).replace(",", "."));
       if (isNaN(parsedQty) || parsedQty <= 0) {
         return res.status(400).json({ error: "A quantidade deve ser maior que zero." });
       }
@@ -978,7 +1069,7 @@ async function startServer() {
       // Update inventory item quantity
       await db.update(inventoryItems)
         .set({ quantity: newQuantity })
-        .where(eq(inventoryItems.id, item.id));
+        .where(and(eq(inventoryItems.id, item.id), eq(inventoryItems.userId, dbUser.id)));
 
       // Record movement
       const movement = await db.insert(inventoryMovements)
@@ -1070,7 +1161,7 @@ async function startServer() {
 
         await db.update(inventoryItems)
           .set({ quantity: reversedQuantity })
-          .where(eq(inventoryItems.id, item.id));
+          .where(and(eq(inventoryItems.id, item.id), eq(inventoryItems.userId, dbUser.id)));
       }
 
       // Delete linked cost if exists
@@ -1079,7 +1170,7 @@ async function startServer() {
 
       // Delete the movement
       await db.delete(inventoryMovements)
-        .where(eq(inventoryMovements.id, movId));
+        .where(and(eq(inventoryMovements.id, movId), eq(inventoryMovements.userId, dbUser.id)));
 
       res.json({ message: "Movimentação estornada com sucesso." });
     } catch (error: any) {
@@ -1089,7 +1180,220 @@ async function startServer() {
   });
 
 
-  // 9. Export All Data
+  // 9. Financial Transactions (Contas a Pagar e Receber) CRUD
+  app.get("/api/transactions", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const dbUser = await getOrCreateUser(req.user!.uid, req.user!.email || "");
+      
+      const list = await db.select({
+        id: transactions.id,
+        type: transactions.type,
+        description: transactions.description,
+        amount: transactions.amount,
+        dueDate: transactions.dueDate,
+        paymentDate: transactions.paymentDate,
+        status: transactions.status,
+        category: transactions.category,
+        cycleId: transactions.cycleId,
+        createdAt: transactions.createdAt,
+        cycleName: cycles.name,
+      })
+      .from(transactions)
+      .leftJoin(cycles, eq(transactions.cycleId, cycles.id))
+      .where(eq(transactions.userId, dbUser.id))
+      .orderBy(desc(transactions.dueDate), desc(transactions.createdAt));
+
+      res.json(list);
+    } catch (error: any) {
+      console.error("Error fetching transactions:", error);
+      res.status(500).json({ error: "Erro ao buscar transações financeiras: " + error.message });
+    }
+  });
+
+  app.post("/api/transactions", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { type, description, amount, dueDate, paymentDate, status, category, cycleId } = req.body;
+      if (!type || !description || amount === undefined || !dueDate) {
+        return res.status(400).json({ error: "Tipo, descrição, valor e data de vencimento são obrigatórios." });
+      }
+
+      const parsedAmount = parseFloat(String(amount).replace(",", "."));
+      if (isNaN(parsedAmount) || parsedAmount < 0) {
+        return res.status(400).json({ error: "Valor inválido ou negativo." });
+      }
+
+      const dbUser = await getOrCreateUser(req.user!.uid, req.user!.email || "");
+
+      let cId: number | null = null;
+      if (cycleId) {
+        cId = parseInt(cycleId);
+        if (isNaN(cId)) return res.status(400).json({ error: "Ciclo inválido." });
+        
+        const userCycle = await db.select().from(cycles).where(and(eq(cycles.id, cId), eq(cycles.userId, dbUser.id))).limit(1);
+        if (userCycle.length === 0) return res.status(403).json({ error: "Ciclo produtivo não encontrado ou sem permissão." });
+      }
+
+      const result = await db.insert(transactions)
+        .values({
+          userId: dbUser.id,
+          type,
+          description,
+          amount: parsedAmount,
+          dueDate,
+          paymentDate: paymentDate || null,
+          status: status || 'pending',
+          category: category || null,
+          cycleId: cId,
+        })
+        .returning();
+      res.json(result[0]);
+    } catch (error: any) {
+      console.error("Error creating transaction:", error);
+      res.status(500).json({ error: "Erro ao registrar transação financeira: " + error.message });
+    }
+  });
+
+  app.put("/api/transactions/:id", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { id } = req.params;
+      const { type, description, amount, dueDate, paymentDate, status, category, cycleId } = req.body;
+      if (!type || !description || amount === undefined || !dueDate) {
+        return res.status(400).json({ error: "Tipo, descrição, valor e data de vencimento são obrigatórios." });
+      }
+
+      const txId = parseInt(id);
+      const parsedAmount = parseFloat(String(amount).replace(",", "."));
+      if (isNaN(txId)) return res.status(400).json({ error: "ID inválido." });
+      if (isNaN(parsedAmount) || parsedAmount < 0) return res.status(400).json({ error: "Valor inválido ou negativo." });
+
+      const dbUser = await getOrCreateUser(req.user!.uid, req.user!.email || "");
+
+      let cId: number | null = null;
+      if (cycleId) {
+        cId = parseInt(cycleId);
+        if (isNaN(cId)) return res.status(400).json({ error: "Ciclo inválido." });
+        
+        const userCycle = await db.select().from(cycles).where(and(eq(cycles.id, cId), eq(cycles.userId, dbUser.id))).limit(1);
+        if (userCycle.length === 0) return res.status(403).json({ error: "Ciclo produtivo não encontrado ou sem permissão." });
+      }
+
+      const result = await db.update(transactions)
+        .set({
+          type,
+          description,
+          amount: parsedAmount,
+          dueDate,
+          paymentDate: paymentDate || null,
+          status: status || 'pending',
+          category: category || null,
+          cycleId: cId,
+        })
+        .where(and(eq(transactions.id, txId), eq(transactions.userId, dbUser.id)))
+        .returning();
+
+      if (result.length === 0) {
+        return res.status(404).json({ error: "Transação não encontrada ou sem permissão." });
+      }
+      res.json(result[0]);
+    } catch (error: any) {
+      console.error("Error updating transaction:", error);
+      res.status(500).json({ error: "Erro ao editar transação financeira." });
+    }
+  });
+
+  
+  app.post("/api/transactions/:id/link", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { id } = req.params;
+      const { cycleId, quantity, unit } = req.body;
+      const txId = parseInt(id);
+      if (isNaN(txId)) return res.status(400).json({ error: "ID inválido." });
+
+      const dbUser = await getOrCreateUser(req.user!.uid, req.user!.email || "");
+
+      const txRecord = await db.select().from(transactions).where(and(eq(transactions.id, txId), eq(transactions.userId, dbUser.id))).limit(1);
+      if (txRecord.length === 0) return res.status(404).json({ error: "Transação não encontrada." });
+      const tx = txRecord[0];
+
+      if (tx.status !== 'paid') return res.status(400).json({ error: "Apenas transações pagas podem ser vinculadas." });
+
+      const cId = parseInt(cycleId);
+      if (isNaN(cId)) return res.status(400).json({ error: "Ciclo inválido." });
+
+      const userCycle = await db.select().from(cycles).where(and(eq(cycles.id, cId), eq(cycles.userId, dbUser.id))).limit(1);
+      if (userCycle.length === 0) return res.status(403).json({ error: "Ciclo produtivo não encontrado." });
+
+      if (tx.type === 'payable') {
+        const costDate = tx.paymentDate || new Date().toISOString().split('T')[0];
+        const existingCost = await db.select().from(costs).where(and(eq(costs.transactionId, tx.id))).limit(1);
+        if (existingCost.length > 0) return res.status(400).json({ error: "Esta transação já foi vinculada a um custo." });
+
+        await db.insert(costs).values({
+          userId: dbUser.id,
+          cycleId: cId,
+          date: costDate,
+          category: tx.category || 'Financeiro',
+          description: tx.description + ' (Vinculado a Transação)',
+          value: tx.amount,
+          paymentMethod: 'Transação',
+          payer: 'Sistema',
+          transactionId: tx.id
+        });
+        res.json({ message: "Custo gerado com sucesso." });
+      } else {
+        const qty = parseFloat(quantity);
+        if (isNaN(qty) || qty <= 0 || !unit) return res.status(400).json({ error: "Quantidade e unidade são obrigatórios para receitas." });
+        const harvestDate = tx.paymentDate || new Date().toISOString().split('T')[0];
+        const existingHarvest = await db.select().from(harvests).where(and(eq(harvests.transactionId, tx.id))).limit(1);
+        if (existingHarvest.length > 0) return res.status(400).json({ error: "Esta transação já foi vinculada a uma receita." });
+
+        const pricePerUnit = tx.amount / qty;
+
+        await db.insert(harvests).values({
+          userId: dbUser.id,
+          cycleId: cId,
+          date: harvestDate,
+          quantity: qty,
+          unit: unit,
+          pricePerUnit: pricePerUnit,
+          transactionId: tx.id
+        });
+        res.json({ message: "Receita gerada com sucesso." });
+      }
+    } catch (error: any) {
+      console.error("Error linking transaction:", error);
+      res.status(500).json({ error: "Erro ao vincular transação." });
+    }
+  });
+
+  app.delete("/api/transactions/:id", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { id } = req.params;
+      const txId = parseInt(id);
+      if (isNaN(txId)) return res.status(400).json({ error: "ID inválido." });
+
+      const dbUser = await getOrCreateUser(req.user!.uid, req.user!.email || "");
+      
+      // Delete associated costs and harvests
+      await db.delete(costs).where(and(eq(costs.transactionId, txId), eq(costs.userId, dbUser.id)));
+      await db.delete(harvests).where(and(eq(harvests.transactionId, txId), eq(harvests.userId, dbUser.id)));
+
+      const result = await db.delete(transactions)
+        .where(and(eq(transactions.id, txId), eq(transactions.userId, dbUser.id)))
+        .returning();
+
+      if (result.length === 0) {
+        return res.status(404).json({ error: "Transação não encontrada ou sem permissão." });
+      }
+      res.json({ message: "Transação excluída com sucesso." });
+    } catch (error: any) {
+      console.error("Error deleting transaction:", error);
+      res.status(500).json({ error: "Erro ao excluir transação financeira." });
+    }
+  });
+
+
+  // 10. Export All Data
   app.get("/api/export", requireAuth, async (req: AuthRequest, res) => {
     try {
       const dbUser = await getOrCreateUser(req.user!.uid, req.user!.email || "");

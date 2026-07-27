@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext.tsx';
-import { Cost, Harvest, Cycle, Plot } from '../types.ts';
+import { Cost, Harvest, Cycle, Plot, Transaction } from '../types.ts';
 import { 
   FileSpreadsheet, 
   Printer, 
@@ -28,6 +28,7 @@ export const ReportsSection: React.FC = () => {
   const [harvests, setHarvests] = useState<Harvest[]>([]);
   const [cycles, setCycles] = useState<Cycle[]>([]);
   const [plots, setPlots] = useState<Plot[]>([]);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -42,18 +43,21 @@ export const ReportsSection: React.FC = () => {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [resCosts, resHarvests, resCycles, resPlots] = await Promise.all([
+      const [resCosts, resHarvests, resCycles, resPlots, resTx] = await Promise.all([
         fetchWithAuth('/api/costs'),
         fetchWithAuth('/api/harvests'),
         fetchWithAuth('/api/cycles'),
-        fetchWithAuth('/api/plots')
+        fetchWithAuth('/api/plots'),
+        fetchWithAuth('/api/transactions')
       ]);
 
-      if (resCosts.ok && resHarvests.ok && resCycles.ok && resPlots.ok) {
+      if (resCosts.ok && resHarvests.ok && resCycles.ok && resPlots.ok && resTx.ok) {
         setCosts(await resCosts.json());
         setHarvests(await resHarvests.json());
         setCycles(await resCycles.json());
         setPlots(await resPlots.json());
+        setTransactions(await resTx.json());
+        setTransactions(await resTx.json());
       } else {
         setError('Erro ao carregar dados dos relatórios.');
       }
@@ -86,6 +90,17 @@ export const ReportsSection: React.FC = () => {
     return true;
   });
 
+  
+  const filteredTransactions = transactions.filter(tx => {
+    if (selectedCycleId && tx.cycleId !== parseInt(selectedCycleId)) return false;
+    // Assuming transactions might not be linked to plots directly, we link via cycle.
+    if (selectedPlotId) {
+      const cycle = cycles.find(c => c.id === tx.cycleId);
+      if (!cycle || cycle.plotId !== parseInt(selectedPlotId)) return false;
+    }
+    return true;
+  });
+
   const filteredHarvests = harvests.filter(harvest => {
     const cycle = cycles.find(c => c.id === harvest.cycleId);
     if (!cycle) return false;
@@ -97,14 +112,20 @@ export const ReportsSection: React.FC = () => {
   });
 
   // Calculations
-  const totalCusto = filteredCosts.reduce((acc, curr) => acc + curr.value, 0);
-  const totalReceita = filteredHarvests.reduce((acc, curr) => acc + (curr.quantity * curr.pricePerUnit), 0);
+  const totalCusto = filteredCosts.reduce((acc, curr) => acc + curr.value, 0) + 
+                     filteredTransactions.filter(tx => tx.type === 'payable').reduce((acc, curr) => acc + curr.amount, 0);
+  const totalReceita = filteredHarvests.reduce((acc, curr) => acc + (curr.quantity * curr.pricePerUnit), 0) +
+                       filteredTransactions.filter(tx => tx.type === 'receivable').reduce((acc, curr) => acc + curr.amount, 0);
   const lucroLiquido = totalReceita - totalCusto;
 
   // Grouped costs by category for mini visual charts
   const costsByCategory: Record<string, number> = {};
   filteredCosts.forEach(curr => {
     costsByCategory[curr.category] = (costsByCategory[curr.category] || 0) + curr.value;
+  });
+  filteredTransactions.filter(tx => tx.type === 'payable').forEach(curr => {
+    const cat = curr.category || 'Financeiro (A Pagar)';
+    costsByCategory[cat] = (costsByCategory[cat] || 0) + curr.amount;
   });
 
   // Grouped harvests by product/activity
@@ -117,6 +138,15 @@ export const ReportsSection: React.FC = () => {
     }
     productionByActivity[actName].quantity += curr.quantity;
     productionByActivity[actName].revenue += curr.quantity * curr.pricePerUnit;
+  });
+  filteredTransactions.filter(tx => tx.type === 'receivable').forEach(curr => {
+    const cycle = curr.cycleId ? cycles.find(c => c.id === curr.cycleId) : null;
+    const actName = cycle?.activityName || "Financeiro (A Receber)";
+    if (!productionByActivity[actName]) {
+      productionByActivity[actName] = { quantity: 0, unit: 'un', revenue: 0 };
+    }
+    // We don't have quantity for receivable transactions, so we just add revenue
+    productionByActivity[actName].revenue += curr.amount;
   });
 
   // --- CÁLCULOS DETALHADOS POR HECTARE ---

@@ -51,6 +51,7 @@ export interface Cost {
   paymentMethod?: string;
   payer?: string;
   inventoryMovementId?: number;
+  transactionId?: number;
   createdAt?: string;
   
   // Joins
@@ -66,6 +67,7 @@ export interface Harvest {
   quantity: number;
   unit: string;
   pricePerUnit: number; // R$
+  transactionId?: number;
   createdAt?: string;
   
   // Joins
@@ -133,4 +135,21 @@ export const INVENTORY_CATEGORIES = [
   "Sementes / Mudas",
   "Outros"
 ];
+
+export interface Transaction {
+  id: number;
+  userId: number;
+  type: 'payable' | 'receivable';
+  description: string;
+  amount: number; // R$
+  dueDate: string; // YYYY-MM-DD
+  paymentDate?: string | null; // YYYY-MM-DD
+  status: 'pending' | 'paid';
+  category?: string;
+  cycleId?: number;
+  createdAt?: string;
+
+  // Joins
+  cycleName?: string;
+}
 
