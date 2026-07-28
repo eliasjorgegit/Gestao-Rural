@@ -41,6 +41,8 @@ export const plots = pgTable('plots', {
   name: text('name').notNull(), // Nome ou Número do Talhão
   size: doublePrecision('size').notNull(), // Tamanho em Hectares
   soilType: text('soil_type').notNull(), // Tipo de Solo ou Relevo
+  plantCount: integer('plant_count').default(0), // Número de Plantas / Pés
+  variety: text('variety'), // Variedade / Espécie (ex: Catuaí Vermelho, Bourbon, Conilon)
   createdAt: timestamp('created_at').defaultNow(),
 });
 
@@ -156,6 +158,27 @@ export const transactions = pgTable('transactions', {
   createdAt: timestamp('created_at').defaultNow(),
 });
 
+// 11. Handling Schedules & Management Calendar (Calendário de Manejo e Agendamentos)
+export const schedules = pgTable('schedules', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id')
+    .references(() => users.id, { onDelete: 'cascade' })
+    .notNull(),
+  title: text('title').notNull(),
+  type: text('type').notNull(), // 'Adubação', 'Pulverização / Defensivo', 'Irrigação', 'Poda / Roçagem', 'Análise de Solo', 'Outro'
+  scheduledDate: text('scheduled_date').notNull(), // YYYY-MM-DD
+  status: text('status').notNull().default('Pendente'), // 'Pendente' | 'Concluído' | 'Cancelado'
+  priority: text('priority').notNull().default('Média'), // 'Baixa' | 'Média' | 'Alta'
+  description: text('description'),
+  cycleId: integer('cycle_id')
+    .references(() => cycles.id, { onDelete: 'set null' }),
+  plotId: integer('plot_id')
+    .references(() => plots.id, { onDelete: 'set null' }),
+  completedDate: text('completed_date'), // YYYY-MM-DD
+  costValue: doublePrecision('cost_value'), // Optional cost when completed
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
 // --- Relations ---
 
 export const usersRelations = relations(users, ({ many }) => ({
@@ -168,6 +191,7 @@ export const usersRelations = relations(users, ({ many }) => ({
   inventoryItems: many(inventoryItems),
   inventoryMovements: many(inventoryMovements),
   transactions: many(transactions),
+  schedules: many(schedules),
 }));
 
 export const propertiesRelations = relations(properties, ({ one }) => ({
@@ -266,5 +290,20 @@ export const transactionsRelations = relations(transactions, ({ one }) => ({
   cycle: one(cycles, {
     fields: [transactions.cycleId],
     references: [cycles.id],
+  }),
+}));
+
+export const schedulesRelations = relations(schedules, ({ one }) => ({
+  user: one(users, {
+    fields: [schedules.userId],
+    references: [users.id],
+  }),
+  cycle: one(cycles, {
+    fields: [schedules.cycleId],
+    references: [cycles.id],
+  }),
+  plot: one(plots, {
+    fields: [schedules.plotId],
+    references: [plots.id],
   }),
 }));

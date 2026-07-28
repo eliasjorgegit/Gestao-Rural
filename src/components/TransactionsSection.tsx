@@ -29,6 +29,8 @@ export const TransactionsSection: React.FC = () => {
   const [viewTab, setViewTab] = useState<'all' | 'payable' | 'receivable'>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'paid'>('all');
   const [monthFilter, setMonthFilter] = useState<string>('todos'); // e.g., '2026-07'
+  const [startDate, setStartDate] = useState<string>('');
+  const [endDate, setEndDate] = useState<string>('');
 
   // Form states
   const [isAdding, setIsAdding] = useState(false);
@@ -250,9 +252,11 @@ export const TransactionsSection: React.FC = () => {
       const matchType = viewTab === 'all' ? true : t.type === viewTab;
       const matchStatus = statusFilter === 'all' ? true : t.status === statusFilter;
       const matchMonth = monthFilter === 'todos' ? true : t.dueDate.startsWith(monthFilter);
-      return matchType && matchStatus && matchMonth;
+      const matchStartDate = !startDate || t.dueDate >= startDate;
+      const matchEndDate = !endDate || t.dueDate <= endDate;
+      return matchType && matchStatus && matchMonth && matchStartDate && matchEndDate;
     });
-  }, [transactions, viewTab, statusFilter, monthFilter]);
+  }, [transactions, viewTab, statusFilter, monthFilter, startDate, endDate]);
 
   // Totals calculations based on CURRENT filter
   const metrics = useMemo(() => {
@@ -531,52 +535,97 @@ export const TransactionsSection: React.FC = () => {
         </div>
 
         {/* Filters */}
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-stone-50 p-3 rounded-xl border border-stone-200 gap-4 mb-6">
-          
-          <div className="flex bg-white p-1 rounded-lg border border-stone-200 shadow-2xs">
-            <button
-              onClick={() => setViewTab('all')}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all ${viewTab === 'all' ? 'bg-stone-900 text-white' : 'text-stone-600 hover:bg-stone-100'}`}
-            >
-              Todos
-            </button>
-            <button
-              onClick={() => setViewTab('payable')}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all flex items-center gap-1 ${viewTab === 'payable' ? 'bg-rose-100 text-rose-800' : 'text-stone-600 hover:bg-stone-100'}`}
-            >
-              A Pagar
-            </button>
-            <button
-              onClick={() => setViewTab('receivable')}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all flex items-center gap-1 ${viewTab === 'receivable' ? 'bg-emerald-100 text-emerald-800' : 'text-stone-600 hover:bg-stone-100'}`}
-            >
-              A Receber
-            </button>
+        <div className="bg-stone-50 p-4 rounded-xl border border-stone-200 space-y-3 mb-6">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-stone-200/80 pb-3">
+            <div className="flex bg-white p-1 rounded-lg border border-stone-200 shadow-2xs">
+              <button
+                onClick={() => setViewTab('all')}
+                className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all ${viewTab === 'all' ? 'bg-stone-900 text-white' : 'text-stone-600 hover:bg-stone-100'}`}
+              >
+                Todos
+              </button>
+              <button
+                onClick={() => setViewTab('payable')}
+                className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all flex items-center gap-1 ${viewTab === 'payable' ? 'bg-rose-100 text-rose-800' : 'text-stone-600 hover:bg-stone-100'}`}
+              >
+                A Pagar
+              </button>
+              <button
+                onClick={() => setViewTab('receivable')}
+                className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all flex items-center gap-1 ${viewTab === 'receivable' ? 'bg-emerald-100 text-emerald-800' : 'text-stone-600 hover:bg-stone-100'}`}
+              >
+                A Receber
+              </button>
+            </div>
+
+            {(startDate || endDate || monthFilter !== 'todos' || statusFilter !== 'all' || viewTab !== 'all') && (
+              <button
+                onClick={() => {
+                  setViewTab('all');
+                  setStatusFilter('all');
+                  setMonthFilter('todos');
+                  setStartDate('');
+                  setEndDate('');
+                }}
+                className="text-xs text-rose-600 hover:text-rose-800 font-medium flex items-center gap-1 cursor-pointer transition-colors"
+              >
+                <X className="w-3.5 h-3.5" />
+                Limpar Filtros
+              </button>
+            )}
           </div>
 
-          <div className="flex flex-wrap gap-3">
-            <div className="flex items-center gap-2">
-              <label className="text-xs font-semibold text-stone-500 uppercase tracking-wider">Status:</label>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            <div>
+              <label className="block text-[11px] font-semibold text-stone-500 uppercase tracking-wider mb-1 flex items-center gap-1">
+                <Calendar className="w-3 h-3 text-stone-400" />
+                Data Inicial (Vencimento)
+              </label>
+              <input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="w-full bg-white border border-stone-200 rounded-lg px-2.5 py-1.5 text-xs font-medium text-stone-700 focus:outline-hidden focus:border-stone-400"
+              />
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-semibold text-stone-500 uppercase tracking-wider mb-1 flex items-center gap-1">
+                <Calendar className="w-3 h-3 text-stone-400" />
+                Data Final (Vencimento)
+              </label>
+              <input
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                className="w-full bg-white border border-stone-200 rounded-lg px-2.5 py-1.5 text-xs font-medium text-stone-700 focus:outline-hidden focus:border-stone-400"
+              />
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-semibold text-stone-500 uppercase tracking-wider mb-1">
+                Status
+              </label>
               <select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value as any)}
-                className="bg-white border border-stone-200 rounded-lg px-2 py-1 text-xs font-medium text-stone-700"
+                className="w-full bg-white border border-stone-200 rounded-lg px-2.5 py-1.5 text-xs font-medium text-stone-700 focus:outline-hidden focus:border-stone-400"
               >
-                <option value="all">Todos</option>
+                <option value="all">Todos os Status</option>
                 <option value="pending">Pendentes</option>
                 <option value="paid">Liquidados</option>
               </select>
             </div>
 
             {availableMonths.length > 0 && (
-              <div className="flex items-center gap-2">
-                <label className="text-xs font-semibold text-stone-500 uppercase tracking-wider flex items-center gap-1">
-                  <Calendar className="w-3.5 h-3.5" /> Mês:
+              <div>
+                <label className="block text-[11px] font-semibold text-stone-500 uppercase tracking-wider mb-1">
+                  Mês Específico
                 </label>
                 <select
                   value={monthFilter}
                   onChange={(e) => setMonthFilter(e.target.value)}
-                  className="bg-white border border-stone-200 rounded-lg px-2 py-1 text-xs font-medium text-stone-700 capitalize"
+                  className="w-full bg-white border border-stone-200 rounded-lg px-2.5 py-1.5 text-xs font-medium text-stone-700 capitalize focus:outline-hidden focus:border-stone-400"
                 >
                   <option value="todos">Todos os meses</option>
                   {availableMonths.map(m => (

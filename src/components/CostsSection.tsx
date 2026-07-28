@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext.tsx';
 import { Cost, Cycle, COST_CATEGORIES } from '../types.ts';
-import { DollarSign, Plus, Edit2, Trash2, Save, X, AlertTriangle } from 'lucide-react';
+import { DollarSign, Plus, Edit2, Trash2, Save, X, AlertTriangle, Calendar, Filter } from 'lucide-react';
 
 interface CostsSectionProps {
   onRefresh?: () => void;
@@ -13,6 +13,12 @@ export const CostsSection: React.FC<CostsSectionProps> = ({ onRefresh }) => {
   const [cycles, setCycles] = useState<Cycle[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Filter states
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState('');
+  const [selectedCycleFilter, setSelectedCycleFilter] = useState('');
 
   // Form states
   const [isAdding, setIsAdding] = useState(false);
@@ -52,6 +58,20 @@ export const CostsSection: React.FC<CostsSectionProps> = ({ onRefresh }) => {
   useEffect(() => {
     fetchData();
   }, []);
+
+  const filteredCosts = useMemo(() => {
+    return costs.filter((cost) => {
+      if (startDate && cost.date < startDate) return false;
+      if (endDate && cost.date > endDate) return false;
+      if (selectedCategoryFilter && cost.category !== selectedCategoryFilter) return false;
+      if (selectedCycleFilter && cost.cycleId !== Number(selectedCycleFilter)) return false;
+      return true;
+    });
+  }, [costs, startDate, endDate, selectedCategoryFilter, selectedCycleFilter]);
+
+  const totalFilteredCost = useMemo(() => {
+    return filteredCosts.reduce((acc, c) => acc + c.value, 0);
+  }, [filteredCosts]);
 
   const resetForm = () => {
     setCycleId('');
@@ -363,21 +383,123 @@ export const CostsSection: React.FC<CostsSectionProps> = ({ onRefresh }) => {
                 <p className="text-xs text-stone-400 mt-1">Crie um lançamento clicando em "Lançar Custo" acima.</p>
               </div>
             ) : (
-              <div className="overflow-x-auto rounded-xl border border-stone-200 shadow-xxs">
-                <table className="w-full text-left border-collapse bg-white">
-                  <thead>
-                    <tr className="bg-stone-50 text-stone-500 text-xs font-semibold uppercase tracking-wider border-b border-stone-200">
-                      <th className="py-3 px-4">Data</th>
-                      <th className="py-3 px-4">Ciclo / Talhão</th>
-                      <th className="py-3 px-4">Categoria</th>
-                      <th className="py-3 px-4">Descrição</th>
-                      <th className="py-3 px-4">Pagamento</th>
-                      <th className="py-3 px-4 text-right">Valor (R$)</th>
-                      <th className="py-3 px-4 text-center">Ações</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-stone-100 text-sm text-stone-700">
-                    {costs.map((cost) => (
+              <div className="space-y-4">
+                {/* BARRA DE FILTROS E INTERVALO DE DATAS */}
+                <div className="bg-stone-50 border border-stone-200 rounded-2xl p-4 space-y-3">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-stone-200 pb-3">
+                    <span className="text-xs font-bold text-stone-700 uppercase tracking-wider flex items-center gap-1.5">
+                      <Filter className="w-4 h-4 text-[#3a4d39]" />
+                      Filtrar Lançamentos de Custos
+                    </span>
+                    {(startDate || endDate || selectedCategoryFilter || selectedCycleFilter) && (
+                      <button
+                        onClick={() => {
+                          setStartDate('');
+                          setEndDate('');
+                          setSelectedCategoryFilter('');
+                          setSelectedCycleFilter('');
+                        }}
+                        className="text-xs text-rose-600 hover:text-rose-800 font-medium flex items-center gap-1 cursor-pointer transition-colors"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                        Limpar Filtros
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-semibold text-stone-500 uppercase tracking-wider mb-1 flex items-center gap-1">
+                        <Calendar className="w-3 h-3 text-stone-400" />
+                        Data Inicial
+                      </label>
+                      <input
+                        type="date"
+                        value={startDate}
+                        onChange={(e) => setStartDate(e.target.value)}
+                        className="w-full px-3 py-1.5 rounded-xl border border-stone-200 text-xs font-sans bg-white focus:outline-hidden focus:border-[#3a4d39]"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-semibold text-stone-500 uppercase tracking-wider mb-1 flex items-center gap-1">
+                        <Calendar className="w-3 h-3 text-stone-400" />
+                        Data Final
+                      </label>
+                      <input
+                        type="date"
+                        value={endDate}
+                        onChange={(e) => setEndDate(e.target.value)}
+                        className="w-full px-3 py-1.5 rounded-xl border border-stone-200 text-xs font-sans bg-white focus:outline-hidden focus:border-[#3a4d39]"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-semibold text-stone-500 uppercase tracking-wider mb-1">
+                        Categoria
+                      </label>
+                      <select
+                        value={selectedCategoryFilter}
+                        onChange={(e) => setSelectedCategoryFilter(e.target.value)}
+                        className="w-full px-3 py-1.5 rounded-xl border border-stone-200 text-xs font-sans bg-white focus:outline-hidden focus:border-[#3a4d39]"
+                      >
+                        <option value="">Todas as categorias</option>
+                        {COST_CATEGORIES.map((cat) => (
+                          <option key={cat} value={cat}>{cat}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-semibold text-stone-500 uppercase tracking-wider mb-1">
+                        Ciclo / Talhão
+                      </label>
+                      <select
+                        value={selectedCycleFilter}
+                        onChange={(e) => setSelectedCycleFilter(e.target.value)}
+                        className="w-full px-3 py-1.5 rounded-xl border border-stone-200 text-xs font-sans bg-white focus:outline-hidden focus:border-[#3a4d39]"
+                      >
+                        <option value="">Todos os ciclos</option>
+                        {cycles.map((c) => (
+                          <option key={c.id} value={c.id.toString()}>{c.name} ({c.plotName})</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Resumo de valores filtrados */}
+                  <div className="flex flex-wrap items-center justify-between pt-2 border-t border-stone-200/80 text-xs">
+                    <span className="text-stone-500">
+                      Exibindo <b>{filteredCosts.length}</b> de <b>{costs.length}</b> lançamentos
+                    </span>
+                    <div className="font-mono bg-[#3a4d39]/10 text-[#3a4d39] px-3 py-1 rounded-lg border border-[#3a4d39]/20 font-bold">
+                      Total no Período: {totalFilteredCost.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                    </div>
+                  </div>
+                </div>
+
+                {filteredCosts.length === 0 ? (
+                  <div className="text-center py-10 text-stone-400 border border-dashed border-stone-200 rounded-2xl bg-stone-50/50">
+                    <Filter className="w-8 h-8 mx-auto mb-2 text-stone-300" />
+                    <p className="text-sm font-sans font-medium text-stone-600">Nenhum custo encontrado para o período/filtros selecionados.</p>
+                    <p className="text-xs text-stone-400 mt-1">Ajuste as datas ou os seletores acima para visualizar seus registros.</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto rounded-xl border border-stone-200 shadow-xxs">
+                    <table className="w-full text-left border-collapse bg-white">
+                      <thead>
+                        <tr className="bg-stone-50 text-stone-500 text-xs font-semibold uppercase tracking-wider border-b border-stone-200">
+                          <th className="py-3 px-4">Data</th>
+                          <th className="py-3 px-4">Ciclo / Talhão</th>
+                          <th className="py-3 px-4">Categoria</th>
+                          <th className="py-3 px-4">Descrição</th>
+                          <th className="py-3 px-4">Pagamento</th>
+                          <th className="py-3 px-4 text-right">Valor (R$)</th>
+                          <th className="py-3 px-4 text-center">Ações</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-stone-100 text-sm text-stone-700">
+                        {filteredCosts.map((cost) => (
                       <tr key={cost.id} className="hover:bg-[#ece3ce]/10 transition-colors">
                         <td className="py-3.5 px-4 font-mono text-xs text-stone-600">
                           {new Date(cost.date + 'T12:00:00').toLocaleDateString('pt-BR')}
@@ -428,6 +550,8 @@ export const CostsSection: React.FC<CostsSectionProps> = ({ onRefresh }) => {
                 </table>
               </div>
             )}
+          </div>
+        )}
           </>
         )}
       </div>

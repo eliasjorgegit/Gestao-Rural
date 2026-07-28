@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext.tsx';
 import { Plot } from '../types.ts';
-import { LayoutGrid, Plus, Edit2, Trash2, Save, X, AlertTriangle } from 'lucide-react';
+import { LayoutGrid, Plus, Edit2, Trash2, Save, X, AlertTriangle, Sprout } from 'lucide-react';
 
 interface PlotsSectionProps {
   onRefresh?: () => void;
@@ -21,6 +21,8 @@ export const PlotsSection: React.FC<PlotsSectionProps> = ({ onRefresh }) => {
   const [name, setName] = useState('');
   const [size, setSize] = useState('');
   const [soilType, setSoilType] = useState('');
+  const [plantCount, setPlantCount] = useState('');
+  const [variety, setVariety] = useState('');
 
   const fetchPlots = async () => {
     try {
@@ -47,6 +49,8 @@ export const PlotsSection: React.FC<PlotsSectionProps> = ({ onRefresh }) => {
     setName('');
     setSize('');
     setSoilType('');
+    setPlantCount('');
+    setVariety('');
     setIsAdding(false);
     setEditingPlot(null);
   };
@@ -56,6 +60,8 @@ export const PlotsSection: React.FC<PlotsSectionProps> = ({ onRefresh }) => {
     setName(plot.name);
     setSize(plot.size.toString());
     setSoilType(plot.soilType);
+    setPlantCount(plot.plantCount !== undefined && plot.plantCount !== null ? plot.plantCount.toString() : '');
+    setVariety(plot.variety || '');
     setIsAdding(false);
   };
 
@@ -64,7 +70,7 @@ export const PlotsSection: React.FC<PlotsSectionProps> = ({ onRefresh }) => {
     setError(null);
 
     if (!name.trim() || !size.trim() || !soilType.trim()) {
-      setError('Por favor, preencha todos os campos.');
+      setError('Por favor, preencha todos os campos obrigatórios.');
       return;
     }
 
@@ -74,12 +80,26 @@ export const PlotsSection: React.FC<PlotsSectionProps> = ({ onRefresh }) => {
       return;
     }
 
+    const countNum = plantCount.trim() !== '' ? parseInt(plantCount, 10) : 0;
+    if (plantCount.trim() !== '' && (isNaN(countNum) || countNum < 0)) {
+      setError('O número de plantas deve ser um número inteiro válido (≥ 0).');
+      return;
+    }
+
+    const payload = {
+      name: name.trim(),
+      size: sizeNum,
+      soilType: soilType.trim(),
+      plantCount: countNum,
+      variety: variety.trim(),
+    };
+
     try {
       if (editingPlot) {
         // Edit
         const res = await fetchWithAuth(`/api/plots/${editingPlot.id}`, {
           method: 'PUT',
-          body: JSON.stringify({ name, size: sizeNum, soilType }),
+          body: JSON.stringify(payload),
         });
 
         if (res.ok) {
@@ -95,7 +115,7 @@ export const PlotsSection: React.FC<PlotsSectionProps> = ({ onRefresh }) => {
         // Add
         const res = await fetchWithAuth('/api/plots', {
           method: 'POST',
-          body: JSON.stringify({ name, size: sizeNum, soilType }),
+          body: JSON.stringify(payload),
         });
 
         if (res.ok) {
@@ -172,10 +192,10 @@ export const PlotsSection: React.FC<PlotsSectionProps> = ({ onRefresh }) => {
               {editingPlot ? 'Editar Talhão' : 'Cadastrar Novo Talhão'}
             </h3>
             
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
               <div>
                 <label className="block text-xs font-semibold text-stone-500 uppercase tracking-wider mb-1.5">
-                  Identificação do Talhão
+                  Identificação do Talhão *
                 </label>
                 <input
                   id="plot-name-input"
@@ -190,7 +210,7 @@ export const PlotsSection: React.FC<PlotsSectionProps> = ({ onRefresh }) => {
 
               <div>
                 <label className="block text-xs font-semibold text-stone-500 uppercase tracking-wider mb-1.5">
-                  Tamanho (Hectares)
+                  Tamanho (Hectares) *
                 </label>
                 <input
                   id="plot-size-input"
@@ -206,7 +226,7 @@ export const PlotsSection: React.FC<PlotsSectionProps> = ({ onRefresh }) => {
 
               <div>
                 <label className="block text-xs font-semibold text-stone-500 uppercase tracking-wider mb-1.5">
-                  Tipo de Solo / Relevo
+                  Tipo de Solo / Relevo *
                 </label>
                 <input
                   id="plot-soil-input"
@@ -216,6 +236,34 @@ export const PlotsSection: React.FC<PlotsSectionProps> = ({ onRefresh }) => {
                   onChange={(e) => setSoilType(e.target.value)}
                   className="w-full px-4 py-2.5 rounded-xl border border-stone-200 focus:outline-hidden focus:border-[#3a4d39] text-sm font-sans transition-all bg-white"
                   required
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-stone-500 uppercase tracking-wider mb-1.5">
+                  Qtd. de Plantas / Pés
+                </label>
+                <input
+                  id="plot-plants-input"
+                  type="number"
+                  placeholder="Ex: 2500"
+                  value={plantCount}
+                  onChange={(e) => setPlantCount(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-xl border border-stone-200 focus:outline-hidden focus:border-[#3a4d39] text-sm font-sans transition-all bg-white"
+                />
+              </div>
+
+              <div className="sm:col-span-2">
+                <label className="block text-xs font-semibold text-stone-500 uppercase tracking-wider mb-1.5">
+                  Variedade / Espécie
+                </label>
+                <input
+                  id="plot-variety-input"
+                  type="text"
+                  placeholder="Ex: Café Catuaí Vermelho, Bourbon, Conilon"
+                  value={variety}
+                  onChange={(e) => setVariety(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-xl border border-stone-200 focus:outline-hidden focus:border-[#3a4d39] text-sm font-sans transition-all bg-white"
                 />
               </div>
             </div>
@@ -259,10 +307,25 @@ export const PlotsSection: React.FC<PlotsSectionProps> = ({ onRefresh }) => {
               >
                 <div>
                   <div className="flex justify-between items-start mb-3">
-                    <h4 className="font-serif italic font-bold text-stone-800 text-lg leading-tight">{plot.name}</h4>
-                    <span className="bg-[#ece3ce] text-[#3a4d39] font-mono text-xs font-semibold px-2.5 py-1 rounded-full border border-[#d2c49a]/30">
-                      {plot.size} ha
-                    </span>
+                    <div>
+                      <h4 className="font-serif italic font-bold text-stone-800 text-lg leading-tight">{plot.name}</h4>
+                      {plot.variety && (
+                        <p className="text-xs text-[#3a4d39] font-medium mt-0.5 flex items-center gap-1">
+                          <Sprout className="w-3.5 h-3.5 text-emerald-600 inline" />
+                          {plot.variety}
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex flex-col items-end gap-1">
+                      <span className="bg-[#ece3ce] text-[#3a4d39] font-mono text-xs font-semibold px-2.5 py-1 rounded-full border border-[#d2c49a]/30">
+                        {plot.size} ha
+                      </span>
+                      {plot.plantCount !== undefined && plot.plantCount > 0 && (
+                        <span className="bg-emerald-50 text-emerald-800 font-mono text-[11px] font-medium px-2 py-0.5 rounded-md border border-emerald-200">
+                          {plot.plantCount.toLocaleString('pt-BR')} plantas
+                        </span>
+                      )}
+                    </div>
                   </div>
                   <div className="space-y-1">
                     <p className="text-xs text-stone-400 uppercase tracking-wider font-semibold">Solo / Relevo</p>

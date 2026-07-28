@@ -112,10 +112,22 @@ export const ReportsSection: React.FC = () => {
   });
 
   // Calculations
+  // Collect IDs of transactions that have already been converted to a Cost or Harvest record
+  const linkedTxIds = new Set<number>(
+    [
+      ...costs.map(c => c.transactionId),
+      ...harvests.map(h => h.transactionId)
+    ].filter((id): id is number => typeof id === 'number' && id > 0)
+  );
+
+  // Separate unlinked financial transactions to prevent double-counting
+  const unlinkedPayables = filteredTransactions.filter(tx => tx.type === 'payable' && !linkedTxIds.has(tx.id));
+  const unlinkedReceivables = filteredTransactions.filter(tx => tx.type === 'receivable' && !linkedTxIds.has(tx.id));
+
   const totalCusto = filteredCosts.reduce((acc, curr) => acc + curr.value, 0) + 
-                     filteredTransactions.filter(tx => tx.type === 'payable').reduce((acc, curr) => acc + curr.amount, 0);
+                     unlinkedPayables.reduce((acc, curr) => acc + curr.amount, 0);
   const totalReceita = filteredHarvests.reduce((acc, curr) => acc + (curr.quantity * curr.pricePerUnit), 0) +
-                       filteredTransactions.filter(tx => tx.type === 'receivable').reduce((acc, curr) => acc + curr.amount, 0);
+                       unlinkedReceivables.reduce((acc, curr) => acc + curr.amount, 0);
   const lucroLiquido = totalReceita - totalCusto;
 
   // Grouped costs by category for mini visual charts
@@ -123,7 +135,7 @@ export const ReportsSection: React.FC = () => {
   filteredCosts.forEach(curr => {
     costsByCategory[curr.category] = (costsByCategory[curr.category] || 0) + curr.value;
   });
-  filteredTransactions.filter(tx => tx.type === 'payable').forEach(curr => {
+  unlinkedPayables.forEach(curr => {
     const cat = curr.category || 'Financeiro (A Pagar)';
     costsByCategory[cat] = (costsByCategory[cat] || 0) + curr.amount;
   });
@@ -139,7 +151,7 @@ export const ReportsSection: React.FC = () => {
     productionByActivity[actName].quantity += curr.quantity;
     productionByActivity[actName].revenue += curr.quantity * curr.pricePerUnit;
   });
-  filteredTransactions.filter(tx => tx.type === 'receivable').forEach(curr => {
+  unlinkedReceivables.forEach(curr => {
     const cycle = curr.cycleId ? cycles.find(c => c.id === curr.cycleId) : null;
     const actName = cycle?.activityName || "Financeiro (A Receber)";
     if (!productionByActivity[actName]) {
@@ -149,24 +161,32 @@ export const ReportsSection: React.FC = () => {
     productionByActivity[actName].revenue += curr.amount;
   });
 
-  // --- CÁLCULOS DETALHADOS POR HECTARE ---
+  // --- CÁLCULOS DETALHADOS POR HECTARE E POR PLANTA ---
   const selectedPlotObj = selectedPlotId ? plots.find(p => p.id === parseInt(selectedPlotId)) : null;
   const selectedCycleObj = selectedCycleId ? cycles.find(c => c.id === parseInt(selectedCycleId)) : null;
 
   let totalAreaHectares = 0;
+  let totalPlantCount = 0;
+
   if (selectedCycleObj) {
     const cyclePlot = plots.find(p => p.id === selectedCycleObj.plotId);
     totalAreaHectares = cyclePlot?.size || selectedCycleObj.plotSize || 0;
+    totalPlantCount = cyclePlot?.plantCount || selectedCycleObj.plotPlantCount || 0;
   } else if (selectedPlotObj) {
     totalAreaHectares = selectedPlotObj.size || 0;
+    totalPlantCount = selectedPlotObj.plantCount || 0;
   } else {
     const activePlotIds = new Set(filteredCycles.map(c => c.plotId));
     if (activePlotIds.size > 0) {
       totalAreaHectares = plots
         .filter(p => activePlotIds.has(p.id))
         .reduce((acc, p) => acc + (p.size || 0), 0);
+      totalPlantCount = plots
+        .filter(p => activePlotIds.has(p.id))
+        .reduce((acc, p) => acc + (p.plantCount || 0), 0);
     } else {
       totalAreaHectares = plots.reduce((acc, p) => acc + (p.size || 0), 0);
+      totalPlantCount = plots.reduce((acc, p) => acc + (p.plantCount || 0), 0);
     }
   }
 
@@ -174,25 +194,35 @@ export const ReportsSection: React.FC = () => {
   const receitaMediaPorHectare = totalAreaHectares > 0 ? totalReceita / totalAreaHectares : 0;
   const lucroMedioPorHectare = receitaMediaPorHectare - custoMedioPorHectare;
 
-  // Detalhamento de custo por hectare por categoria
+  const custoMedioPorPlanta = totalPlantCount > 0 ? totalCusto / totalPlantCount : 0;
+  const receitaMediaPorPlanta = totalPlantCount > 0 ? totalReceita / totalPlantCount : 0;
+  const lucroMedioPorPlanta = receitaMediaPorPlanta - custoMedioPorPlanta;
+
+  // Detalhamento de custo por hectare e por planta por categoria
   const categoryHectareData = Object.entries(costsByCategory).map(([cat, val]) => {
     const perHa = totalAreaHectares > 0 ? val / totalAreaHectares : 0;
+    const perPlanta = totalPlantCount > 0 ? val / totalPlantCount : 0;
     const percentage = totalCusto > 0 ? (val / totalCusto) * 100 : 0;
     return {
       category: cat,
       totalVal: val,
       perHa,
+      perPlanta,
       percentage
     };
   }).sort((a, b) => b.totalVal - a.totalVal);
 
-  // Detalhamento por Ciclo / Talhão (Custo por hectare em cada talhão)
+  // Detalhamento por Ciclo / Talhão (Custo por hectare e por planta em cada talhão)
   const cycleHectareBreakdown = filteredCycles.map(cycle => {
     const plot = plots.find(p => p.id === cycle.plotId);
     const plotSize = plot?.size || cycle.plotSize || 1;
+    const plotPlants = plot?.plantCount || cycle.plotPlantCount || 0;
+    const plotVarietyStr = plot?.variety || cycle.plotVariety || '';
+
     const cycleCostsList = filteredCosts.filter(c => c.cycleId === cycle.id);
     const totalCycleCost = cycleCostsList.reduce((acc, c) => acc + c.value, 0);
     const cycleCostPerHa = totalCycleCost / (plotSize > 0 ? plotSize : 1);
+    const cycleCostPerPlant = plotPlants > 0 ? totalCycleCost / plotPlants : 0;
 
     const cycleCategoryCosts: Record<string, number> = {};
     cycleCostsList.forEach(c => {
@@ -203,8 +233,11 @@ export const ReportsSection: React.FC = () => {
       cycle,
       plot,
       plotSize,
+      plotPlants,
+      plotVarietyStr,
       totalCycleCost,
       cycleCostPerHa,
+      cycleCostPerPlant,
       categoryBreakdown: cycleCategoryCosts
     };
   });
@@ -234,31 +267,39 @@ export const ReportsSection: React.FC = () => {
   };
 
   const exportHectareToCSV = () => {
-    const headers = ['Categoria de Custo', 'Custo Total (R$)', 'Área Total (ha)', 'Custo por Hectare (R$/ha)', 'Participação (%)'];
+    const headers = ['Categoria de Custo', 'Custo Total (R$)', 'Área Total (ha)', 'Custo por Hectare (R$/ha)', 'Total Plantas', 'Custo por Planta (R$/planta)', 'Participação (%)'];
     const rows = categoryHectareData.map(item => [
       item.category,
       item.totalVal.toFixed(2),
       totalAreaHectares.toFixed(2),
       item.perHa.toFixed(2),
+      totalPlantCount.toString(),
+      item.perPlanta.toFixed(2),
       item.percentage.toFixed(1) + '%'
     ]);
 
-    rows.push(['', '', '', '', '']);
-    rows.push(['RESUMO GERAL POR HECTARE', '', '', '', '']);
-    rows.push(['Área Total Analisada', totalAreaHectares.toFixed(2) + ' ha', '', '', '']);
-    rows.push(['Custo Médio / ha', custoMedioPorHectare.toFixed(2) + ' R$/ha', '', '', '100%']);
-    rows.push(['Receita Média / ha', receitaMediaPorHectare.toFixed(2) + ' R$/ha', '', '', '']);
-    rows.push(['Lucro Médio / ha', lucroMedioPorHectare.toFixed(2) + ' R$/ha', '', '', '']);
+    rows.push(['', '', '', '', '', '', '']);
+    rows.push(['RESUMO GERAL POR HECTARE E PLANTA', '', '', '', '', '', '']);
+    rows.push(['Área Total Analisada', totalAreaHectares.toFixed(2) + ' ha', '', '', '', '', '']);
+    rows.push(['Total de Plantas / Pés', totalPlantCount.toString() + ' plantas', '', '', '', '', '']);
+    rows.push(['Custo Médio / ha', custoMedioPorHectare.toFixed(2) + ' R$/ha', '', '', '', '', '']);
+    rows.push(['Custo Médio / Planta', custoMedioPorPlanta.toFixed(2) + ' R$/planta', '', '', '', '', '']);
+    rows.push(['Receita Média / ha', receitaMediaPorHectare.toFixed(2) + ' R$/ha', '', '', '', '', '']);
+    rows.push(['Receita Média / Planta', receitaMediaPorPlanta.toFixed(2) + ' R$/planta', '', '', '', '', '']);
+    rows.push(['Lucro Médio / ha', lucroMedioPorHectare.toFixed(2) + ' R$/ha', '', '', '', '', '']);
+    rows.push(['Lucro Médio / Planta', lucroMedioPorPlanta.toFixed(2) + ' R$/planta', '', '', '', '', '']);
 
-    rows.push(['', '', '', '', '']);
-    rows.push(['DETALHAMENTO POR CICLO E TALHÃO', 'Área (ha)', 'Custo Total (R$)', 'Custo por Hectare (R$/ha)', '']);
+    rows.push(['', '', '', '', '', '', '']);
+    rows.push(['DETALHAMENTO POR CICLO E TALHÃO', 'Variedade', 'Área (ha)', 'Qtd. Plantas', 'Custo Total (R$)', 'Custo/Hectare (R$/ha)', 'Custo/Planta (R$/planta)']);
     cycleHectareBreakdown.forEach(item => {
       rows.push([
         `${item.cycle.name} (${item.plot?.name || item.cycle.plotName})`,
+        item.plotVarietyStr || 'Não especificada',
         item.plotSize.toFixed(2),
+        item.plotPlants.toString(),
         item.totalCycleCost.toFixed(2),
         item.cycleCostPerHa.toFixed(2),
-        ''
+        item.cycleCostPerPlant.toFixed(2)
       ]);
     });
 
@@ -550,7 +591,7 @@ export const ReportsSection: React.FC = () => {
           }`}
         >
           <Scale className="w-4 h-4" />
-          Custos por Hectare (R$/ha)
+          Custos e Lucro por Hectare & Planta
         </button>
         <button
           id="tab-sub-costs"
@@ -676,10 +717,11 @@ export const ReportsSection: React.FC = () => {
         <div className={`space-y-6 ${activeSubTab !== 'per_hectare' ? 'hidden print:block' : ''}`}>
           
           {/* Ações superiores para Custos por Hectare */}
+          {/* Ações superiores para Custos e Lucro por Hectare & Planta */}
           <div className="flex justify-between items-center bg-stone-50 px-6 py-3.5 rounded-xl border border-stone-200 print:hidden">
             <span className="text-xs font-semibold text-stone-500 flex items-center gap-2">
               <Scale className="w-4 h-4 text-[#3a4d39]" />
-              Análise e Indicadores de Custo por Hectare (R$/ha)
+              Análise e Indicadores por Hectare e por Planta (R$/ha e R$/planta)
             </span>
             <div className="flex gap-2">
               <button
@@ -701,17 +743,20 @@ export const ReportsSection: React.FC = () => {
             </div>
           </div>
 
-          {/* Cards de Métricas por Hectare */}
+          {/* Cards de Métricas por Hectare e por Planta */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="bg-white rounded-2xl border border-stone-200 p-5 shadow-xs flex items-center gap-4">
               <div className="p-3 bg-stone-100 rounded-xl text-stone-700">
                 <Sprout className="w-6 h-6" />
               </div>
-              <div>
-                <p className="text-xs text-stone-500 font-medium">Área Total Analisada</p>
+              <div className="space-y-0.5">
+                <p className="text-xs text-stone-500 font-medium">Área & Plantas</p>
                 <h4 className="text-xl font-serif italic font-bold text-stone-900">
                   {totalAreaHectares.toFixed(2)} <span className="text-xs font-normal text-stone-500">ha</span>
                 </h4>
+                <p className="text-xs text-stone-600 font-mono">
+                  {totalPlantCount.toLocaleString('pt-BR')} <span className="text-[10px] text-stone-400 font-sans">plantas</span>
+                </p>
               </div>
             </div>
 
@@ -719,11 +764,14 @@ export const ReportsSection: React.FC = () => {
               <div className="p-3 bg-rose-50 rounded-xl text-rose-700">
                 <DollarSign className="w-6 h-6" />
               </div>
-              <div>
-                <p className="text-xs text-stone-500 font-medium">Custo Médio / Hectare</p>
+              <div className="space-y-0.5">
+                <p className="text-xs text-stone-500 font-medium">Custo Médio</p>
                 <h4 className="text-xl font-serif italic font-bold text-rose-800">
                   {custoMedioPorHectare.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} <span className="text-xs font-normal text-stone-500">/ha</span>
                 </h4>
+                <p className="text-xs text-rose-700 font-mono">
+                  {custoMedioPorPlanta.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} <span className="text-[10px] text-stone-400 font-sans">/planta</span>
+                </p>
               </div>
             </div>
 
@@ -731,11 +779,14 @@ export const ReportsSection: React.FC = () => {
               <div className="p-3 bg-emerald-50 rounded-xl text-emerald-700">
                 <TrendingUp className="w-6 h-6" />
               </div>
-              <div>
-                <p className="text-xs text-stone-500 font-medium">Receita Média / Hectare</p>
+              <div className="space-y-0.5">
+                <p className="text-xs text-stone-500 font-medium">Receita Média</p>
                 <h4 className="text-xl font-serif italic font-bold text-emerald-800">
                   {receitaMediaPorHectare.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} <span className="text-xs font-normal text-stone-500">/ha</span>
                 </h4>
+                <p className="text-xs text-emerald-700 font-mono">
+                  {receitaMediaPorPlanta.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} <span className="text-[10px] text-stone-400 font-sans">/planta</span>
+                </p>
               </div>
             </div>
 
@@ -743,28 +794,36 @@ export const ReportsSection: React.FC = () => {
               <div className="p-3 bg-[#3a4d39]/10 rounded-xl text-[#3a4d39]">
                 <Scale className="w-6 h-6" />
               </div>
-              <div>
-                <p className="text-xs text-stone-500 font-medium">Lucro Médio / Hectare</p>
+              <div className="space-y-0.5">
+                <p className="text-xs text-stone-500 font-medium">Lucro Médio</p>
                 <h4 className={`text-xl font-serif italic font-bold ${lucroMedioPorHectare >= 0 ? 'text-[#3a4d39]' : 'text-rose-700'}`}>
                   {lucroMedioPorHectare.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} <span className="text-xs font-normal text-stone-500">/ha</span>
                 </h4>
+                <p className={`text-xs font-mono ${lucroMedioPorPlanta >= 0 ? 'text-[#3a4d39]' : 'text-rose-700'}`}>
+                  {lucroMedioPorPlanta.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} <span className="text-[10px] text-stone-400 font-sans">/planta</span>
+                </p>
               </div>
             </div>
           </div>
 
-          {/* Tabela 1: Custos de Insumos e Serviços por Hectare (Por Categoria) */}
+          {/* Tabela 1: Custos de Insumos e Serviços por Hectare e por Planta (Por Categoria) */}
           <div className="bg-white rounded-2xl border border-stone-200 p-6 shadow-xs space-y-4">
-            <div className="flex justify-between items-center border-b border-stone-100 pb-3">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-stone-100 pb-3">
               <div>
                 <h4 className="font-serif italic font-bold text-stone-900 text-base flex items-center gap-2">
                   <PieChart className="w-4 h-4 text-[#3a4d39]" />
-                  Detalhamento de Custos de Insumos e Serviços por Hectare
+                  Detalhamento de Custos de Insumos e Serviços por Hectare e por Planta
                 </h4>
-                <p className="text-xs text-stone-500">Valores consolidados em cada hectare de terra cultivada</p>
+                <p className="text-xs text-stone-500">Valores consolidados por área cultivada e por unidade de planta/pé</p>
               </div>
-              <span className="text-xs font-mono bg-stone-100 px-3 py-1 rounded-full text-stone-600 font-semibold">
-                Área de referência: {totalAreaHectares.toFixed(2)} ha
-              </span>
+              <div className="flex gap-2">
+                <span className="text-xs font-mono bg-stone-100 px-3 py-1 rounded-full text-stone-600 font-semibold">
+                  Área: {totalAreaHectares.toFixed(2)} ha
+                </span>
+                <span className="text-xs font-mono bg-emerald-50 px-3 py-1 rounded-full text-emerald-800 font-semibold border border-emerald-200/60">
+                  {totalPlantCount.toLocaleString('pt-BR')} plantas
+                </span>
+              </div>
             </div>
 
             {categoryHectareData.length === 0 ? (
@@ -778,9 +837,10 @@ export const ReportsSection: React.FC = () => {
                     <tr className="bg-stone-50 text-stone-500 uppercase tracking-wider font-bold border-b border-stone-200 text-[10px]">
                       <th className="py-3 px-4">Categoria de Insumo / Serviço</th>
                       <th className="py-3 px-4 text-right">Custo Total (R$)</th>
-                      <th className="py-3 px-4 text-right">Custo por Hectare (R$/ha)</th>
+                      <th className="py-3 px-4 text-right">Custo / Hectare (R$/ha)</th>
+                      <th className="py-3 px-4 text-right">Custo / Planta (R$/planta)</th>
                       <th className="py-3 px-4 text-right">Participação (%)</th>
-                      <th className="py-3 px-4">Representação Visão Geral</th>
+                      <th className="py-3 px-4">Representação</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-stone-100 font-sans">
@@ -795,10 +855,13 @@ export const ReportsSection: React.FC = () => {
                         <td className="py-3.5 px-4 text-right font-mono font-extrabold text-[#3a4d39] bg-stone-50/50">
                           {item.perHa.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} <span className="text-[10px] text-stone-400 font-normal">/ha</span>
                         </td>
+                        <td className="py-3.5 px-4 text-right font-mono font-bold text-emerald-800 bg-emerald-50/30">
+                          {item.perPlanta.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} <span className="text-[10px] text-stone-400 font-normal">/planta</span>
+                        </td>
                         <td className="py-3.5 px-4 text-right font-mono text-stone-600">
                           {item.percentage.toFixed(1)}%
                         </td>
-                        <td className="py-3.5 px-4 min-w-[140px]">
+                        <td className="py-3.5 px-4 min-w-[120px]">
                           <div className="w-full bg-stone-100 rounded-full h-2.5 overflow-hidden">
                             <div 
                               className="bg-[#3a4d39] h-2.5 rounded-full" 
@@ -817,6 +880,9 @@ export const ReportsSection: React.FC = () => {
                       <td className="py-3.5 px-4 text-right font-mono text-base text-[#3a4d39]">
                         {custoMedioPorHectare.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} <span className="text-xs text-stone-500 font-normal">/ha</span>
                       </td>
+                      <td className="py-3.5 px-4 text-right font-mono text-base text-emerald-800">
+                        {custoMedioPorPlanta.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} <span className="text-xs text-stone-500 font-normal">/planta</span>
+                      </td>
                       <td className="py-3.5 px-4 text-right font-mono">100%</td>
                       <td></td>
                     </tr>
@@ -826,14 +892,14 @@ export const ReportsSection: React.FC = () => {
             )}
           </div>
 
-          {/* Tabela 2: Custo por Hectare Detalhado por Talhão / Ciclo Produtivo */}
+          {/* Tabela 2: Custo por Hectare e Planta Detalhado por Talhão / Ciclo Produtivo */}
           <div className="bg-white rounded-2xl border border-stone-200 p-6 shadow-xs space-y-4">
             <div className="border-b border-stone-100 pb-3">
               <h4 className="font-serif italic font-bold text-stone-900 text-base flex items-center gap-2">
                 <BarChart3 className="w-4 h-4 text-[#3a4d39]" />
-                Comparativo de Custo por Hectare Entre Talhões e Ciclos
+                Comparativo de Custo por Hectare & Planta Entre Talhões
               </h4>
-              <p className="text-xs text-stone-500">Mapeamento direto de quanto cada talhão utilizou em insumos e operações por hectare</p>
+              <p className="text-xs text-stone-500">Mapeamento direto de quanto cada talhão utilizou em insumos e operações por hectare e por planta</p>
             </div>
 
             {cycleHectareBreakdown.length === 0 ? (
@@ -844,11 +910,20 @@ export const ReportsSection: React.FC = () => {
               <div className="space-y-4">
                 {cycleHectareBreakdown.map(item => (
                   <div key={item.cycle.id} className="border border-stone-200 rounded-xl p-4 bg-stone-50/50 space-y-3">
-                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-stone-200 pb-2">
+                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-2 border-b border-stone-200 pb-2">
                       <div>
-                        <span className="font-bold font-serif italic text-stone-900 text-base">{item.cycle.name}</span>
-                        <span className="text-xs text-stone-500 ml-2 font-medium">
-                          (Talhão: <b>{item.plot?.name || item.cycle.plotName}</b> — Área: <b>{item.plotSize} ha</b>)
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold font-serif italic text-stone-900 text-base">{item.cycle.name}</span>
+                          {item.plotVarietyStr && (
+                            <span className="bg-stone-200/80 text-stone-700 text-[11px] font-medium px-2 py-0.5 rounded-md flex items-center gap-1">
+                              <Sprout className="w-3 h-3 text-emerald-700 inline" />
+                              {item.plotVarietyStr}
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-xs text-stone-500 font-medium">
+                          Talhão: <b>{item.plot?.name || item.cycle.plotName}</b> — Área: <b>{item.plotSize} ha</b>
+                          {item.plotPlants > 0 && <> — <b>{item.plotPlants.toLocaleString('pt-BR')} plantas</b></>}
                         </span>
                       </div>
                       <div className="flex items-center gap-3">
@@ -860,16 +935,24 @@ export const ReportsSection: React.FC = () => {
                         </div>
                         <div className="text-right bg-[#3a4d39]/10 px-3 py-1 rounded-lg">
                           <span className="text-[10px] text-[#3a4d39] uppercase block font-bold">CUSTO / HECTARE</span>
-                          <span className="font-mono font-extrabold text-[#3a4d39] text-base">
+                          <span className="font-mono font-extrabold text-[#3a4d39] text-sm sm:text-base">
                             {item.cycleCostPerHa.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}/ha
                           </span>
                         </div>
+                        {item.plotPlants > 0 && (
+                          <div className="text-right bg-emerald-50 px-3 py-1 rounded-lg border border-emerald-200/50">
+                            <span className="text-[10px] text-emerald-800 uppercase block font-bold">CUSTO / PLANTA</span>
+                            <span className="font-mono font-extrabold text-emerald-800 text-sm sm:text-base">
+                              {item.cycleCostPerPlant.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}/planta
+                            </span>
+                          </div>
+                        )}
                       </div>
                     </div>
 
                     {/* Quebra de Insumos e Categorias neste Ciclo */}
                     <div>
-                      <p className="text-[11px] font-bold uppercase text-stone-400 mb-2">Composição de Insumos neste Hectare:</p>
+                      <p className="text-[11px] font-bold uppercase text-stone-400 mb-2">Composição de Insumos neste Talhão:</p>
                       {Object.keys(item.categoryBreakdown).length === 0 ? (
                         <p className="text-xs text-stone-400 italic">Nenhum custo lançado para este ciclo especificamente.</p>
                       ) : (
@@ -877,12 +960,20 @@ export const ReportsSection: React.FC = () => {
                           {Object.entries(item.categoryBreakdown).map(([cat, val]) => {
                             const numVal = Number(val);
                             const catPerHa = item.plotSize > 0 ? numVal / item.plotSize : 0;
+                            const catPerPlanta = item.plotPlants > 0 ? numVal / item.plotPlants : 0;
                             return (
                               <div key={cat} className="bg-white p-2.5 rounded-lg border border-stone-200 text-xs flex justify-between items-center">
                                 <span className="font-medium text-stone-700">{cat}:</span>
-                                <span className="font-mono font-bold text-stone-900">
-                                  {catPerHa.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} <span className="text-[10px] font-normal text-stone-400">/ha</span>
-                                </span>
+                                <div className="text-right font-mono">
+                                  <span className="font-bold text-stone-900 block">
+                                    {catPerHa.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} <span className="text-[10px] font-normal text-stone-400">/ha</span>
+                                  </span>
+                                  {item.plotPlants > 0 && (
+                                    <span className="text-[11px] text-emerald-700 block font-semibold">
+                                      {catPerPlanta.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} <span className="text-[9px] font-normal text-stone-400">/planta</span>
+                                    </span>
+                                  )}
+                                </div>
                               </div>
                             );
                           })}

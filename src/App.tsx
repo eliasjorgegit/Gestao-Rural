@@ -9,6 +9,7 @@ import { HarvestsSection } from './components/HarvestsSection.tsx';
 import { ReportsSection } from './components/ReportsSection.tsx';
 import { InventorySection } from './components/InventorySection.tsx';
 import { TransactionsSection } from './components/TransactionsSection.tsx';
+import { SchedulesSection } from './components/SchedulesSection.tsx';
 import { 
   Sprout, 
   Landmark, 
@@ -22,13 +23,14 @@ import {
   ChevronRight,
   Sparkles,
   Package,
-  Wallet
+  Wallet,
+  Bell
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 function Dashboard() {
   const { user, logout } = useAuth();
-  const [activeTab, setActiveTab] = useState<'basics' | 'cycles' | 'inventory' | 'costs' | 'transactions' | 'harvests' | 'reports'>('basics');
+  const [activeTab, setActiveTab] = useState<'basics' | 'cycles' | 'schedules' | 'inventory' | 'costs' | 'transactions' | 'harvests' | 'reports'>('basics');
   
   // State to trigger reactive updates in dependent components
   const [refreshTrigger, setRefreshTrigger] = useState(0);
@@ -40,6 +42,7 @@ function Dashboard() {
   const navItems = [
     { id: 'basics', name: 'Cadastros Básicos', desc: 'Fazenda, Culturas e Áreas', icon: Landmark },
     { id: 'cycles', name: 'Ciclos Produtivos', desc: 'Planejar Safras e Lotes', icon: CalendarDays },
+    { id: 'schedules', name: 'Calendário de Manejo', desc: 'Alertas e Atividades no Campo', icon: Bell },
     { id: 'inventory', name: 'Estoque de Insumos', desc: 'Sementes, Adubos e Ferramentas', icon: Package },
     { id: 'costs', name: 'Lançamento de Custos', desc: 'Despesas e Insumos', icon: DollarSign },
     { id: 'transactions', name: 'Financeiro', desc: 'Contas a Pagar e Receber', icon: Wallet },
@@ -170,6 +173,13 @@ function Dashboard() {
                   </div>
 
                   <CyclesSection onRefresh={triggerRefresh} />
+                </div>
+              )}
+
+              {/* 2.5 CALENDÁRIO DE MANEJO & ALERTAS PRÓXIMOS */}
+              {activeTab === 'schedules' && (
+                <div className="space-y-6">
+                  <SchedulesSection key={`schedules-${refreshTrigger}`} onRefresh={triggerRefresh} />
                 </div>
               )}
 

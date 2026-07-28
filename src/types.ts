@@ -20,6 +20,8 @@ export interface Plot {
   name: string;
   size: number; // Hectares
   soilType: string;
+  plantCount?: number; // Número de Plantas / Pés
+  variety?: string; // Variedade / Espécie
   createdAt?: string;
 }
 
@@ -37,6 +39,8 @@ export interface Cycle {
   // Joins
   plotName?: string;
   plotSize?: number;
+  plotPlantCount?: number;
+  plotVariety?: string;
   activityName?: string;
 }
 
@@ -152,4 +156,34 @@ export interface Transaction {
   // Joins
   cycleName?: string;
 }
+
+export interface Schedule {
+  id: number;
+  userId: number;
+  title: string;
+  type: string; // 'Adubação', 'Pulverização / Defensivo', 'Irrigação', 'Poda / Roçagem', 'Análise de Solo', 'Outro'
+  scheduledDate: string; // YYYY-MM-DD
+  status: 'Pendente' | 'Concluído' | 'Cancelado';
+  priority: 'Baixa' | 'Média' | 'Alta';
+  description?: string;
+  cycleId?: number | null;
+  plotId?: number | null;
+  completedDate?: string | null;
+  costValue?: number | null;
+  createdAt?: string;
+
+  // Joins
+  cycleName?: string;
+  plotName?: string;
+}
+
+export const SCHEDULE_TYPES = [
+  "Adubação",
+  "Pulverização / Defensivo",
+  "Irrigação",
+  "Poda / Roçagem",
+  "Análise de Solo",
+  "Colheita / Preparo",
+  "Outro"
+];
 

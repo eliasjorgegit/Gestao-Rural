@@ -6,7 +6,7 @@ import jwt from "jsonwebtoken";
 import { requireAuth, AuthRequest, JWT_SECRET } from "./src/middleware/auth.ts";
 import { getOrCreateUser } from "./src/db/users.ts";
 import { db } from "./src/db/index.ts";
-import { users, properties, activities, plots, cycles, costs, harvests, inventoryItems, inventoryMovements, transactions } from "./src/db/schema.ts";
+import { users, properties, activities, plots, cycles, costs, harvests, inventoryItems, inventoryMovements, transactions, schedules } from "./src/db/schema.ts";
 import { eq, and, desc } from "drizzle-orm";
 
 async function startServer() {
@@ -280,7 +280,7 @@ async function startServer() {
 
   app.post("/api/plots", requireAuth, async (req: AuthRequest, res) => {
     try {
-      const { name, size, soilType } = req.body;
+      const { name, size, soilType, plantCount, variety } = req.body;
       if (!name || size === undefined || !soilType) {
         return res.status(400).json({ error: "Nome, tamanho (hectares) e tipo de solo/relevo são obrigatórios." });
       }
@@ -290,6 +290,10 @@ async function startServer() {
         return res.status(400).json({ error: "Tamanho inválido. Deve ser maior que zero." });
       }
 
+      const parsedPlantCount = plantCount !== undefined && plantCount !== null && plantCount !== '' 
+        ? parseInt(String(plantCount), 10) 
+        : 0;
+
       const dbUser = await getOrCreateUser(req.user!.uid, req.user!.email || "");
       const result = await db.insert(plots)
         .values({
@@ -297,6 +301,8 @@ async function startServer() {
           name,
           size: parsedSize,
           soilType,
+          plantCount: isNaN(parsedPlantCount) ? 0 : parsedPlantCount,
+          variety: variety ? String(variety).trim() : null,
         })
         .returning();
       res.json(result[0]);
@@ -309,7 +315,7 @@ async function startServer() {
   app.put("/api/plots/:id", requireAuth, async (req: AuthRequest, res) => {
     try {
       const { id } = req.params;
-      const { name, size, soilType } = req.body;
+      const { name, size, soilType, plantCount, variety } = req.body;
       if (!name || size === undefined || !soilType) {
         return res.status(400).json({ error: "Nome, tamanho e tipo de solo são obrigatórios." });
       }
@@ -324,9 +330,19 @@ async function startServer() {
         return res.status(400).json({ error: "Tamanho inválido. Deve ser maior que zero." });
       }
 
+      const parsedPlantCount = plantCount !== undefined && plantCount !== null && plantCount !== '' 
+        ? parseInt(String(plantCount), 10) 
+        : 0;
+
       const dbUser = await getOrCreateUser(req.user!.uid, req.user!.email || "");
       const result = await db.update(plots)
-        .set({ name, size: parsedSize, soilType })
+        .set({ 
+          name, 
+          size: parsedSize, 
+          soilType,
+          plantCount: isNaN(parsedPlantCount) ? 0 : parsedPlantCount,
+          variety: variety ? String(variety).trim() : null
+        })
         .where(and(eq(plots.id, plotId), eq(plots.userId, dbUser.id)))
         .returning();
 
@@ -379,6 +395,8 @@ async function startServer() {
         createdAt: cycles.createdAt,
         plotName: plots.name,
         plotSize: plots.size,
+        plotPlantCount: plots.plantCount,
+        plotVariety: plots.variety,
         activityName: activities.name,
       })
       .from(cycles)
@@ -515,6 +533,7 @@ async function startServer() {
         value: costs.value,
         paymentMethod: costs.paymentMethod,
         payer: costs.payer,
+        transactionId: costs.transactionId,
         createdAt: costs.createdAt,
         cycleName: cycles.name,
         plotName: plots.name,
@@ -729,6 +748,7 @@ async function startServer() {
         quantity: harvests.quantity,
         unit: harvests.unit,
         pricePerUnit: harvests.pricePerUnit,
+        transactionId: harvests.transactionId,
         createdAt: harvests.createdAt,
         cycleName: cycles.name,
         plotName: plots.name,
@@ -1392,6 +1412,156 @@ async function startServer() {
     }
   });
 
+
+  // 10. Schedules & Management Calendar
+  app.get("/api/schedules", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const dbUser = await getOrCreateUser(req.user!.uid, req.user!.email || "");
+      const userSchedules = await db.select({
+        id: schedules.id,
+        userId: schedules.userId,
+        title: schedules.title,
+        type: schedules.type,
+        scheduledDate: schedules.scheduledDate,
+        status: schedules.status,
+        priority: schedules.priority,
+        description: schedules.description,
+        cycleId: schedules.cycleId,
+        plotId: schedules.plotId,
+        completedDate: schedules.completedDate,
+        costValue: schedules.costValue,
+        createdAt: schedules.createdAt,
+        cycleName: cycles.name,
+        plotName: plots.name,
+      })
+      .from(schedules)
+      .leftJoin(cycles, eq(schedules.cycleId, cycles.id))
+      .leftJoin(plots, eq(schedules.plotId, plots.id))
+      .where(eq(schedules.userId, dbUser.id))
+      .orderBy(schedules.scheduledDate);
+
+      res.json(userSchedules);
+    } catch (error: any) {
+      console.error("Error fetching schedules:", error);
+      res.status(500).json({ error: "Erro ao carregar agendamentos de manejo." });
+    }
+  });
+
+  app.post("/api/schedules", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { title, type, scheduledDate, priority, description, cycleId, plotId, costValue } = req.body;
+      if (!title || !type || !scheduledDate) {
+        return res.status(400).json({ error: "Título, tipo e data de agendamento são obrigatórios." });
+      }
+
+      const dbUser = await getOrCreateUser(req.user!.uid, req.user!.email || "");
+
+      let cId = cycleId ? parseInt(cycleId) : null;
+      if (cId && isNaN(cId)) cId = null;
+
+      let pId = plotId ? parseInt(plotId) : null;
+      if (pId && isNaN(pId)) pId = null;
+
+      const newSchedule = await db.insert(schedules).values({
+        userId: dbUser.id,
+        title,
+        type,
+        scheduledDate,
+        status: 'Pendente',
+        priority: priority || 'Média',
+        description: description || null,
+        cycleId: cId,
+        plotId: pId,
+        costValue: costValue !== undefined && costValue !== null && costValue !== '' ? parseFloat(costValue) : null,
+      }).returning();
+
+      res.status(201).json(newSchedule[0]);
+    } catch (error: any) {
+      console.error("Error creating schedule:", error);
+      res.status(500).json({ error: "Erro ao criar agendamento de manejo." });
+    }
+  });
+
+  app.put("/api/schedules/:id", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { id } = req.params;
+      const scheduleId = parseInt(id);
+      if (isNaN(scheduleId)) return res.status(400).json({ error: "ID inválido." });
+
+      const { title, type, scheduledDate, status, priority, description, cycleId, plotId, completedDate, costValue, createCostRecord } = req.body;
+
+      const dbUser = await getOrCreateUser(req.user!.uid, req.user!.email || "");
+
+      const currentRecord = await db.select().from(schedules).where(and(eq(schedules.id, scheduleId), eq(schedules.userId, dbUser.id))).limit(1);
+      if (currentRecord.length === 0) {
+        return res.status(404).json({ error: "Agendamento não encontrado." });
+      }
+
+      let cId = cycleId !== undefined ? (cycleId ? parseInt(cycleId) : null) : currentRecord[0].cycleId;
+      let pId = plotId !== undefined ? (plotId ? parseInt(plotId) : null) : currentRecord[0].plotId;
+
+      const updateData: any = {};
+      if (title !== undefined) updateData.title = title;
+      if (type !== undefined) updateData.type = type;
+      if (scheduledDate !== undefined) updateData.scheduledDate = scheduledDate;
+      if (status !== undefined) updateData.status = status;
+      if (priority !== undefined) updateData.priority = priority;
+      if (description !== undefined) updateData.description = description;
+      if (cId !== undefined) updateData.cycleId = cId;
+      if (pId !== undefined) updateData.plotId = pId;
+      if (completedDate !== undefined) updateData.completedDate = completedDate;
+      if (costValue !== undefined) updateData.costValue = costValue !== null && costValue !== '' ? parseFloat(costValue) : null;
+
+      const result = await db.update(schedules)
+        .set(updateData)
+        .where(and(eq(schedules.id, scheduleId), eq(schedules.userId, dbUser.id)))
+        .returning();
+
+      // If status changed to Concluído and createCostRecord is requested with costValue & cycleId
+      const finalCostVal = costValue !== undefined ? (costValue ? parseFloat(costValue) : null) : currentRecord[0].costValue;
+      if (status === 'Concluído' && createCostRecord && finalCostVal && finalCostVal > 0 && cId) {
+        const costDate = completedDate || new Date().toISOString().split('T')[0];
+        const categoryName = type ? (type.includes('Adubação') ? 'Adubação' : type.includes('Pulverização') ? 'Pulverização' : type.includes('Irrigação') ? 'Irrigação' : 'Mão de obra') : 'Manutenção';
+        await db.insert(costs).values({
+          userId: dbUser.id,
+          cycleId: cId,
+          date: costDate,
+          category: categoryName,
+          description: `${title || currentRecord[0].title} (Conclusão de Manejo)`,
+          value: finalCostVal,
+          paymentMethod: 'Agendamento',
+          payer: 'Manejo Agrícola',
+        });
+      }
+
+      res.json(result[0]);
+    } catch (error: any) {
+      console.error("Error updating schedule:", error);
+      res.status(500).json({ error: "Erro ao atualizar agendamento." });
+    }
+  });
+
+  app.delete("/api/schedules/:id", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { id } = req.params;
+      const scheduleId = parseInt(id);
+      if (isNaN(scheduleId)) return res.status(400).json({ error: "ID inválido." });
+
+      const dbUser = await getOrCreateUser(req.user!.uid, req.user!.email || "");
+
+      const result = await db.delete(schedules)
+        .where(and(eq(schedules.id, scheduleId), eq(schedules.userId, dbUser.id)))
+        .returning();
+
+      if (result.length === 0) {
+        return res.status(404).json({ error: "Agendamento não encontrado." });
+      }
+      res.json({ message: "Agendamento excluído com sucesso." });
+    } catch (error: any) {
+      console.error("Error deleting schedule:", error);
+      res.status(500).json({ error: "Erro ao excluir agendamento." });
+    }
+  });
 
   // 10. Export All Data
   app.get("/api/export", requireAuth, async (req: AuthRequest, res) => {
